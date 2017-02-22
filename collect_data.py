@@ -2,17 +2,24 @@ import csv
 import json
 import os
 import pdb
+import re
 import shutil
 import sys
 import time
+import nltk
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from termcolor import colored
 from disqusapi import DisqusAPI, APIError, FormattingError
 from collections import defaultdict
+from gensim import corpora, models
+from nltk.stem.porter import PorterStemmer
+from nltk.tokenize import RegexpTokenizer
+from nltk.corpus import stopwords
 from numpy import linalg
+from termcolor import colored
+
 
 DEDUP = {
     'channel-theatlanticdiscussions': 'theatlantic',
@@ -26,6 +33,7 @@ DEDUP = {
     'spectator-new-blogs': 'spectator-org',
     'theamericanspectator': 'spectator-org',
 }
+
 
 def save_json(data, name):
     path = name + '.json'
@@ -45,6 +53,7 @@ def save_json(data, name):
     except Exception as e:
         print e
 
+
 def load_json(name, default=None):
     path = name + '.json'
     bakpath = name + '.bak.json'
@@ -59,6 +68,7 @@ def load_json(name, default=None):
         data = default
 
     return data
+
 
 class DataPuller(object):
     def __init__(self, keyfile):
@@ -106,11 +116,6 @@ class DataPuller(object):
             for u in res:
                 if not u['isAnonymous'] and u['id'] not in users and u['isPrivate']:
                     num_private += 1
-
-            # break if we get redundant data, not sure why this happens
-            #if users | new_users == users:
-                #self.done_with.add(forum)
-                #break
 
             # set operations woohoo
             users |= new_users
@@ -200,10 +205,11 @@ class DataPuller(object):
         # pull first post in thread
         res = self.api.request('threads.listPosts', thread=thread,
                                order='asc', limit=1)
-        self.thread_posts[thread] = [res[0]]
+        self.thread_posts[thread] = [res[0]['id']]
         has_next = res.cursor['hasNext']
         cursor = res.cursor['next']
         num_posts = 1
+        all_data = []
 
         while has_next and num_posts < total_posts:
             try:
@@ -220,26 +226,44 @@ class DataPuller(object):
             has_next = res.cursor['hasPrev']
             cursor = res.cursor['prev']
 
-            # reverse the order
-            self.thread_posts[thread] += list(res)[::-1]
+            # reverse the order and save
+            posts = list(res)[::-1]
+            for p in posts:
+                if p['id'] not in self.thread_posts[thread]:
+                    self.thread_posts[thread].append(p['id'])
 
             # count number of posts
             num_posts = len(self.thread_posts[thread])
             print 'retrieved', num_posts, 'posts'
 
+            for p in posts:
+                dic = {'id': p['id'],
+                       'text': p['raw_message'],
+                       'author': p['author'].get('id', -1),
+                       'time': p['createdAt'],
+                       'points': p['points']}
+                all_data.append(dic)
+
         print 'saving thread data...'
+        with open('threads/%s.json' % thread, 'w') as f:
+            # save the thread in its own file
+            json.dump(all_data, f)
         save_json(self.thread_posts, 'thread_posts')
 
     def pull_all_posts(self):
         threads = []
         for ts in self.forum_threads.values():
-            threads.extend([t for i, t in ts.iteritems() if i not in self.thread_posts])
+            # only first ten per forum for now
+            ts = sorted(ts.items(), key=lambda i: -i[1]['postsInInterval'])[:10]
+            threads.extend([t for i, t in ts if i not in self.thread_posts])
 
         # do longest threads first
         threads.sort(key=lambda t: -t['postsInInterval'])
 
         # loop indefinitely, gathering data
         for thread in threads:
+            print 'pulling data for thread', repr(thread['clean_title']), \
+                'from forum', thread['forum']
             self.pull_thread_posts(thread['id'])
 
     def pull_forum_threads(self, forum):
@@ -399,17 +423,23 @@ def print_correlations(df):
             colored(df.columns[a.argmin()], 'red'), min(a)
 
 
+def get_correlation_graph(puller):
+    df = puller.build_matrix()
+    df = get_correlations(df)
+    for c in df.columns:
+        df[c] = df[c].map(lambda v: v**2)
+        df[c] /= sum(df[c])
+
+    return df
+
+
 def hierarchical_cluster(df):
-    # TODO
-    for i, arr in enumerate(np.corrcoef(df.values.T.astype(float))):
-        a = arr[:]
-        a[i] = 0
-        print df.columns[i], colored(df.columns[a.argmax()], 'green'), max(a), \
-            colored(df.columns[a.argmin()], 'red'), min(a)
+    pass # TODO
 
 
 def do_mcl(df, e, r, subset=None):
-    # perform MCL with expansion power parameter e and inflation parameter r
+    # perform the Markov Cluster Algorithm (mcl) with expansion power parameter
+    # e and inflation parameter r
     # higher r -> more granular clusters
     # based on
     # https://www.cs.ucsb.edu/~xyan/classes/CS595D-2009winter/MCL_Presentation2.pdf
@@ -449,14 +479,44 @@ def do_mcl(df, e, r, subset=None):
     return clusters
 
 
-def get_correlation_graph(puller):
-    df = puller.build_matrix()
-    df = get_correlations(df)
-    for c in df.columns:
-        df[c] = df[c].map(lambda v: v**2)
-        df[c] /= sum(df[c])
+def get_documents(puller, forum):
+    threads = {f: [t for t in ts if t in puller.thread_posts] for f, ts in
+               puller.forum_threads.items()}
 
-    return df
+    print 'generated dictionary'
+
+    tokenizer = RegexpTokenizer(r'\w+')
+    sw = stopwords.words('english')
+    stemmer = PorterStemmer()
+
+    texts = []
+    for tid in threads[forum]:
+        # load data
+        with open('threads/%s.json' % tid) as f:
+            js = json.load(f)
+            text ='\n'.join([p['text'] for p in js])
+
+        print 'loaded data for thread', tid
+
+        # tokenize, stop words, stemming
+        tokens = tokenizer.tokenize(text)
+        clean_tokens = []
+        for t in tokens:
+            if t.lower() not in sw:
+                clean_tokens.append(stemmer.stem(t))
+
+        texts.append(clean_tokens)
+
+        print 'cleaned data for thread', tid
+
+    # TODO: do we need a whole separate library to do just this part?
+    dic = corpora.Dictionary(texts)
+    corpus = [dic.doc2bow(text) for text in texts]
+    return dic, corpus
+
+    ldamodel = models.ldamodel.LdaModel(corpus, num_topics=10, id2word=dic,
+                                        passes=20)
+
 
 
 if __name__ == '__main__':
