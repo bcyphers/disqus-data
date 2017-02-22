@@ -1,6 +1,8 @@
 import csv
 import json
+import os
 import pdb
+import shutil
 import sys
 import time
 import numpy as np
@@ -22,6 +24,38 @@ DEDUP = {
     'pbsnewshourformrodeo': 'pbsnewshour',
 }
 
+def save_json(data, name):
+    path = name + '.json'
+    bakpath = name + '.bak.json'
+
+    # create a backup
+    os.rename(path, bakpath)
+
+    try:
+        with open(path, 'w') as out:
+            json.dump(data, out)
+    except KeyboardInterrupt as e:
+        print 'KeyboardInterrupt. Restoring backup file...'
+        shutil.copyfile(bakpath, path)
+        sys.exit(0)
+    except Exception as e:
+        print e
+
+def load_json(name, default=None):
+    path = name + '.json'
+    bakpath = name + '.bak.json'
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except ValueError:
+        # problem with the json
+        with open(bakpath) as f:
+            data = json.load(f)
+    except:
+        data = default
+
+    return data
+
 class DataPuller(object):
     def __init__(self, keyfile):
         with open(keyfile) as kf:
@@ -32,23 +66,11 @@ class DataPuller(object):
 
     def load(self):
         # load json files
-        try:
-            with open('user_to_forums.json') as f:
-                self.user_to_forums = json.load(f)
-        except:
-            self.user_to_forums = {}
-
-        try:
-            with open('forum_to_users.json') as f:
-                self.forum_to_users = json.load(f)
-        except:
-            self.forum_to_users = {}
-
-        try:
-            with open('done_with.json') as f:
-                self.done_with = set(json.load(f))
-        except:
-            self.done_with = set()
+        self.user_to_forums = load_json('user_to_forums', default={})
+        self.forum_to_users = load_json('forum_to_users', default={})
+        self.done_with = set(load_json('done_with', default=[]))
+        self.forum_threads = load_json('forum_threads', default={})
+        self.thread_posts = load_json('thread_posts', default={})
 
     def pull_users(self, forum, min_users=100):
         users = set(self.forum_to_users.get(forum, []))
@@ -104,15 +126,13 @@ class DataPuller(object):
             print 'error on user id', user_id, err
             return None
 
-    def pull_forum_data(self, forum, min_users=100):
+    def pull_forum_users(self, forum, min_users=100):
         print 'pulling most active users for forum', repr(forum)
         self.forum_to_users[forum] = self.pull_users(forum, min_users=1000)
 
         print 'saving forum data...'
-        with open('forum_to_users.json', 'w') as out:
-            json.dump(self.forum_to_users, out)
-        with open('done_with.json', 'w') as out:
-            json.dump(list(self.done_with), out)
+        save_json(self.forum_to_users, 'forum_to_users')
+        save_json(list(self.done_with), 'done_with')
 
         # for each of the most active users of this forum, find what forums
         # they're most active on
@@ -139,8 +159,7 @@ class DataPuller(object):
             self.user_to_forums[uid] = uf
 
         print 'saving user data...'
-        with open('user_to_forums.json', 'w') as out:
-            json.dump(self.user_to_forums, out)
+        save_json(self.user_to_forums, 'user_to_forums')
 
     def pull_all_forums(self, min_users):
         # remove forums we've collected enough data on
@@ -151,15 +170,52 @@ class DataPuller(object):
                     del forums[f]
             return forums
 
-        forums = cull_forums(self.get_forum_weights())
+        forums = cull_forums(self.get_forum_activity())
 
         # loop indefinitely, gathering data
         while forums:
             forum = sorted(forums.items(), key=lambda i: -i[1])[0][0]
-            self.pull_forum_data(forum, min_users)
+            self.pull_forum_users(forum, min_users)
 
             # update forum rankings with new data
-            forums = cull_forums(self.get_forum_weights())
+            forums = cull_forums(self.get_forum_activity())
+
+    def pull_thread_posts(self, thread, num_posts=1000):
+        pass
+
+    def pull_forum_threads(self, forum):
+        print 'pulling most popular threads for forum', forum
+        assert forum not in self.forum_threads
+
+        try:
+            res = self.api.request('threads.listPopular', forum=forum,
+                                   interval='30d', limit=100)
+        except APIError as err:
+            print err
+            return
+        except FormattingError as err:
+            print err
+            return
+
+        # count number of threads
+        num_posts = sum([t['postsInInterval'] for t in res])
+        self.forum_threads[forum] = {t['id']: t for t in res}
+        print 'retrieved', len(res), 'threads with', num_posts, 'posts'
+
+        print 'saving thread data...'
+        save_json(self.forum_threads, 'forum_threads')
+
+    def pull_all_threads(self):
+        forums = self.get_forum_weights()
+        for f in forums.keys():
+            if f in self.forum_threads:
+                del forums[f]
+
+        # loop indefinitely, gathering data
+        while forums:
+            forum = sorted(forums.items(), key=lambda i: -i[1])[0][0]
+            self.pull_forum_threads(forum)
+            del forums[forum]
 
     def get_deduped_ftu(self):
         ftu = {}
@@ -214,6 +270,14 @@ class DataPuller(object):
                 forums[f] += v / float(sum(ftf.values()))
 
         return forums
+
+    # map forums to recent activity
+    def get_forum_activity(self, dedup=False):
+        counts = defaultdict(int)
+        for f, threads in self.forum_threads.items():
+            counts[f] = sum([t['postsInInterval'] for t in threads.values()])
+
+        return counts
 
     # generate a transition matrix for this graph
     def build_matrix(self, dedup=True, N=None):
@@ -320,12 +384,10 @@ def mcl_correlations(puller, e=2, r=3):
 if __name__ == '__main__':
     puller = DataPuller(sys.argv[1])
 
-    weights = puller.get_forum_weights()
-    for i in sorted(weights.items(), key=lambda i: -i[1])[:100]:
+    activity = puller.get_forum_activity()
+    for i in sorted(activity.items(), key=lambda i: -i[1])[:100]:
         color = 'green' if i[0] in puller.forum_to_users else 'red'
-        print colored('%s: %.3f' % i, color)
+        print colored('%s: %d' % i, color)
 
-    for f in puller.forum_to_users:
-        print f
-
+    #puller.pull_all_threads()
     puller.pull_all_forums(min_users=100)

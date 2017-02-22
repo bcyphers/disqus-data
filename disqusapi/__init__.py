@@ -1,1 +1,1 @@
-from disqus_api import DisqusAPI
+from disqus_api import DisqusAPI, APIError, FormattingError
