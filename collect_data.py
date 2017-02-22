@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from termcolor import colored
 from disqusapi import DisqusAPI, APIError, FormattingError
 from collections import defaultdict
-from numpy.linalg import matrix_power
+from numpy import linalg
 
 DEDUP = {
     'channel-theatlanticdiscussions': 'theatlantic',
@@ -21,7 +21,10 @@ DEDUP = {
     'in-focus': 'theatlantic',
     'bwbeta': 'bloomberg',
     'bloombergview': 'bloomberg',
-    'pbsnewshourformrodeo': 'pbsnewshour',
+    'pbsnewshourformsrodeo': 'pbsnewshour',
+    'pj-instapundit': 'pj-media',
+    'spectator-new-blogs': 'spectator-org',
+    'theamericanspectator': 'spectator-org',
 }
 
 def save_json(data, name):
@@ -29,6 +32,7 @@ def save_json(data, name):
     bakpath = name + '.bak.json'
 
     # create a backup
+    with open(path, 'a'): pass
     os.rename(path, bakpath)
 
     try:
@@ -71,6 +75,10 @@ class DataPuller(object):
         self.done_with = set(load_json('done_with', default=[]))
         self.forum_threads = load_json('forum_threads', default={})
         self.thread_posts = load_json('thread_posts', default={})
+
+    ###########################################################################
+    ##  Users and forums  #####################################################
+    ###########################################################################
 
     def pull_users(self, forum, min_users=100):
         users = set(self.forum_to_users.get(forum, []))
@@ -180,8 +188,59 @@ class DataPuller(object):
             # update forum rankings with new data
             forums = cull_forums(self.get_forum_activity())
 
-    def pull_thread_posts(self, thread, num_posts=1000):
-        pass
+    ###########################################################################
+    ##  Threads and posts  ####################################################
+    ###########################################################################
+
+    def pull_thread_posts(self, thread, total_posts=1000):
+        assert thread not in self.thread_posts
+
+        print 'pulling first', total_posts, 'posts for thread', thread
+
+        # pull first post in thread
+        res = self.api.request('threads.listPosts', thread=thread,
+                               order='asc', limit=1)
+        self.thread_posts[thread] = [res[0]]
+        has_next = res.cursor['hasNext']
+        cursor = res.cursor['next']
+        num_posts = 1
+
+        while has_next and num_posts < total_posts:
+            try:
+                res = self.api.request('threads.listPosts', thread=thread,
+                                       limit=100, cursor=cursor)
+            except APIError as err:
+                print err
+                return
+            except FormattingError as err:
+                print err
+                return
+
+            # have to go backwards here because we want them in chron order
+            has_next = res.cursor['hasPrev']
+            cursor = res.cursor['prev']
+
+            # reverse the order
+            self.thread_posts[thread] += list(res)[::-1]
+
+            # count number of posts
+            num_posts = len(self.thread_posts[thread])
+            print 'retrieved', num_posts, 'posts'
+
+        print 'saving thread data...'
+        save_json(self.thread_posts, 'thread_posts')
+
+    def pull_all_posts(self):
+        threads = []
+        for ts in self.forum_threads.values():
+            threads.extend([t for i, t in ts.iteritems() if i not in self.thread_posts])
+
+        # do longest threads first
+        threads.sort(key=lambda t: -t['postsInInterval'])
+
+        # loop indefinitely, gathering data
+        for thread in threads:
+            self.pull_thread_posts(thread['id'])
 
     def pull_forum_threads(self, forum):
         print 'pulling most popular threads for forum', forum
@@ -206,7 +265,7 @@ class DataPuller(object):
         save_json(self.forum_threads, 'forum_threads')
 
     def pull_all_threads(self):
-        forums = self.get_forum_weights()
+        forums = get_weights(self)
         for f in forums.keys():
             if f in self.forum_threads:
                 del forums[f]
@@ -216,6 +275,10 @@ class DataPuller(object):
             forum = sorted(forums.items(), key=lambda i: -i[1])[0][0]
             self.pull_forum_threads(forum)
             del forums[forum]
+
+    ###########################################################################
+    ##  Utility functions and graph stuff  ####################################
+    ###########################################################################
 
     def get_deduped_ftu(self):
         ftu = {}
@@ -261,16 +324,6 @@ class DataPuller(object):
 
         return forum_edges
 
-    # quick and dumb way to weight the forums globally
-    def get_forum_weights(self, dedup=False):
-        forums = defaultdict(float)
-
-        for ftf in self.get_forum_edges(dedup=dedup).values():
-            for f, v in ftf.items():
-                forums[f] += v / float(sum(ftf.values()))
-
-        return forums
-
     # map forums to recent activity
     def get_forum_activity(self, dedup=False):
         counts = defaultdict(int)
@@ -289,7 +342,7 @@ class DataPuller(object):
         edges = self.get_forum_edges(dedup)
         forums = [k for k in edges.keys() if len(forum_to_users[k]) > 0]
         if N is not None:
-            weights = self.get_forum_weights(dedup)
+            weights = get_weights(self)
             forums = sorted(forums, key=lambda f: -weights[f])[:N]
 
         df = pd.DataFrame(columns=forums, index=forums)
@@ -306,6 +359,27 @@ class DataPuller(object):
             df[f1] /= sum(df[f1])
 
         return df
+
+
+def pagerank(df, iters = 10):
+    for c in df.columns:
+        df[c][c] = 0
+    A = df.values.T.astype(float)
+    n = A.shape[1]
+    w, v = linalg.eig(A)
+    vec = abs(np.real(v[:n, 0]) / linalg.norm(v[:n, 0], 1))
+    ranks = {df.columns[i]: vec[i] for i in range(len(vec))}
+    return sorted(ranks.items(), key=lambda i: i[1])
+
+
+def get_weights(puller, dedup=False):
+    forums = defaultdict(float)
+
+    for ftf in puller.get_forum_edges(dedup=dedup).values():
+        for f, v in ftf.items():
+            forums[f] += v / float(sum(ftf.values()))
+
+    return forums
 
 
 def get_correlations(df):
@@ -334,18 +408,23 @@ def hierarchical_cluster(df):
             colored(df.columns[a.argmin()], 'red'), min(a)
 
 
-def do_mcl(df, e, r):
+def do_mcl(df, e, r, subset=None):
     # perform MCL with expansion power parameter e and inflation parameter r
     # higher r -> more granular clusters
     # based on
     # https://www.cs.ucsb.edu/~xyan/classes/CS595D-2009winter/MCL_Presentation2.pdf
+    if subset:
+        df = df[subset].ix[subset]
+        for c in df.columns:
+            df[c] /= sum(df[c])
+
     mat = df.values.astype(float)
 
     converged = False
     while not converged:
         # expand
         last_mat = mat.copy()
-        mat = matrix_power(mat, e)
+        mat = linalg.matrix_power(mat, e)
 
         # inflate
         for i in range(mat.shape[0]):
@@ -370,15 +449,14 @@ def do_mcl(df, e, r):
     return clusters
 
 
-def mcl_correlations(puller, e=2, r=3):
+def get_correlation_graph(puller):
     df = puller.build_matrix()
     df = get_correlations(df)
     for c in df.columns:
         df[c] = df[c].map(lambda v: v**2)
         df[c] /= sum(df[c])
 
-    mcl = do_mcl(df, e, r)
-    print mcl
+    return df
 
 
 if __name__ == '__main__':
@@ -389,5 +467,6 @@ if __name__ == '__main__':
         color = 'green' if i[0] in puller.forum_to_users else 'red'
         print colored('%s: %d' % i, color)
 
+    #puller.pull_all_forums(min_users=100)
     #puller.pull_all_threads()
-    puller.pull_all_forums(min_users=100)
+    puller.pull_all_posts()
