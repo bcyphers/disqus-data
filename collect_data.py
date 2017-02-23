@@ -6,17 +6,12 @@ import re
 import shutil
 import sys
 import time
-import nltk
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from disqusapi import DisqusAPI, APIError, FormattingError
 from collections import defaultdict
-from gensim import corpora, models
-from nltk.stem.porter import PorterStemmer
-from nltk.tokenize import RegexpTokenizer
-from nltk.corpus import stopwords
 from numpy import linalg
 from termcolor import colored
 
@@ -85,6 +80,11 @@ class DataPuller(object):
         self.done_with = set(load_json('done_with', default=[]))
         self.forum_threads = load_json('forum_threads', default={})
         self.thread_posts = load_json('thread_posts', default={})
+
+        self.all_threads = {}
+        for ts in self.forum_threads.values():
+            self.all_threads.update({t: ts[t]['clean_title'] for t in ts})
+
 
     ###########################################################################
     ##  Users and forums  #####################################################
@@ -254,7 +254,7 @@ class DataPuller(object):
         threads = []
         for ts in self.forum_threads.values():
             # only first ten per forum for now
-            ts = sorted(ts.items(), key=lambda i: -i[1]['postsInInterval'])[:10]
+            ts = sorted(ts.items(), key=lambda i: -i[1]['postsInInterval'])[:25]
             threads.extend([t for i, t in ts if i not in self.thread_posts])
 
         # do longest threads first
@@ -366,7 +366,7 @@ class DataPuller(object):
         edges = self.get_forum_edges(dedup)
         forums = [k for k in edges.keys() if len(forum_to_users[k]) > 0]
         if N is not None:
-            weights = get_weights(self)
+            weights = self.get_weights(dedup)
             forums = sorted(forums, key=lambda f: -weights[f])[:N]
 
         df = pd.DataFrame(columns=forums, index=forums)
@@ -384,139 +384,21 @@ class DataPuller(object):
 
         return df
 
+    def get_forum_threads(self):
+        threads = {}
+        for f, ts in self.forum_threads.items():
+            threads[f] = [t for t in ts if t in self.thread_posts]
+        return threads
 
-def pagerank(df, iters = 10):
-    for c in df.columns:
-        df[c][c] = 0
-    A = df.values.T.astype(float)
-    n = A.shape[1]
-    w, v = linalg.eig(A)
-    vec = abs(np.real(v[:n, 0]) / linalg.norm(v[:n, 0], 1))
-    ranks = {df.columns[i]: vec[i] for i in range(len(vec))}
-    return sorted(ranks.items(), key=lambda i: i[1])
+    # TODO: this is dumb
+    def get_weights(self, dedup=False):
+        forums = defaultdict(float)
 
+        for ftf in self.get_forum_edges(dedup=dedup).values():
+            for f, v in ftf.items():
+                forums[f] += v / float(sum(ftf.values()))
 
-def get_weights(puller, dedup=False):
-    forums = defaultdict(float)
-
-    for ftf in puller.get_forum_edges(dedup=dedup).values():
-        for f, v in ftf.items():
-            forums[f] += v / float(sum(ftf.values()))
-
-    return forums
-
-
-def get_correlations(df):
-    # Generate a correlation matrix for edge graph
-    out = pd.DataFrame(columns=df.columns, index=df.index)
-    for i, arr in enumerate(np.corrcoef(df.values.T.astype(float))):
-        for j in range(len(arr)):
-            out[df.columns[j]][df.columns[i]] = arr[j]
-    return out
-
-
-def print_correlations(df):
-    for i, arr in enumerate(np.corrcoef(df.values.T.astype(float))):
-        a = arr[:]
-        a[i] = 0
-        print df.columns[i], colored(df.columns[a.argmax()], 'green'), max(a), \
-            colored(df.columns[a.argmin()], 'red'), min(a)
-
-
-def get_correlation_graph(puller):
-    df = puller.build_matrix()
-    df = get_correlations(df)
-    for c in df.columns:
-        df[c] = df[c].map(lambda v: v**2)
-        df[c] /= sum(df[c])
-
-    return df
-
-
-def hierarchical_cluster(df):
-    pass # TODO
-
-
-def do_mcl(df, e, r, subset=None):
-    # perform the Markov Cluster Algorithm (mcl) with expansion power parameter
-    # e and inflation parameter r
-    # higher r -> more granular clusters
-    # based on
-    # https://www.cs.ucsb.edu/~xyan/classes/CS595D-2009winter/MCL_Presentation2.pdf
-    if subset:
-        df = df[subset].ix[subset]
-        for c in df.columns:
-            df[c] /= sum(df[c])
-
-    mat = df.values.astype(float)
-
-    converged = False
-    while not converged:
-        # expand
-        last_mat = mat.copy()
-        mat = linalg.matrix_power(mat, e)
-
-        # inflate
-        for i in range(mat.shape[0]):
-            mat[i] **= r
-            mat[i] /= sum(mat[i])
-
-            for j in range(mat.shape[1]):
-                if mat[i, j] < 1.0e-100:
-                    mat[i, j] = 0
-
-        # converge?
-        if np.all(last_mat == mat):
-            converged = True
-
-    clusters = {}
-    for i in range(mat.shape[1]):
-        if sum(mat[:,i]) > 0:
-            cluster = [j for j in range(mat.shape[0]) if mat[j,i] > 0]
-            clusters[df.columns[i]] = sorted(map(lambda k: df.columns[k],
-                                                 cluster))
-
-    return clusters
-
-
-def get_documents(puller, forum):
-    threads = {f: [t for t in ts if t in puller.thread_posts] for f, ts in
-               puller.forum_threads.items()}
-
-    print 'generated dictionary'
-
-    tokenizer = RegexpTokenizer(r'\w+')
-    sw = stopwords.words('english')
-    stemmer = PorterStemmer()
-
-    texts = []
-    for tid in threads[forum]:
-        # load data
-        with open('threads/%s.json' % tid) as f:
-            js = json.load(f)
-            text ='\n'.join([p['text'] for p in js])
-
-        print 'loaded data for thread', tid
-
-        # tokenize, stop words, stemming
-        tokens = tokenizer.tokenize(text)
-        clean_tokens = []
-        for t in tokens:
-            if t.lower() not in sw:
-                clean_tokens.append(stemmer.stem(t))
-
-        texts.append(clean_tokens)
-
-        print 'cleaned data for thread', tid
-
-    # TODO: do we need a whole separate library to do just this part?
-    dic = corpora.Dictionary(texts)
-    corpus = [dic.doc2bow(text) for text in texts]
-    return dic, corpus
-
-    ldamodel = models.ldamodel.LdaModel(corpus, num_topics=10, id2word=dic,
-                                        passes=20)
-
+        return forums
 
 
 if __name__ == '__main__':
