@@ -151,12 +151,13 @@ class DataPuller(object):
         Go through users in our forum-to-user mapping and, for each one, pull
         a list of the forums they're most active in.
         """
-        forums = sorted(self.get_forum_activity().items(), key=lambda i: -i[1])
+        activity = self.get_forum_activity()
+        forums = sorted(self.get_all_forums(), key=lambda i: -activity[i])
 
         # loop over forums in order of most active
         for forum in forums:
             # check how many of these users we already have
-            total_users = self.forum_to_users[forum]:
+            total_users = self.forum_to_users[forum]
             without_data = [u for u in total_users if u not in
                             self.user_to_forums]
             with_data = len(total_users) - len(without_data)
@@ -179,8 +180,11 @@ class DataPuller(object):
         """
         Loop over forums and pull in active user lists for each one
         """
+        activity = self.get_forum_activity()
+        forums = sorted(self.get_all_forums(), key=lambda i: -activity[i])
+        forums = [f for f in forums if f not in self.done_with]
+
         # loop over forums in order of most active
-        forums = sorted(self.get_forum_activity().items(), key=lambda i: -i[1])
         for forum in forums:
             print 'pulling most active users for forum', repr(forum)
             self.forum_to_users[forum] = self.pull_users(forum, min_users)
@@ -386,6 +390,13 @@ class DataPuller(object):
         for f, ts in self.forum_threads.items():
             threads[f] = [t for t in ts if t in self.thread_posts]
         return threads
+
+    def get_all_forums(self):
+        forums = set()
+        for u, fs in self.user_to_forums.items():
+            forums |= set(fs)
+
+        return list(forums)
 
     # TODO: this is dumb
     def get_weights(self, dedup=False):
