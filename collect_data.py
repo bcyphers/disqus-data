@@ -60,6 +60,7 @@ def load_json(name, default=None):
         with open(bakpath) as f:
             data = json.load(f)
     except:
+        # file doesn't exist yet, so use default
         data = default
 
     return data
@@ -77,6 +78,7 @@ class DataPuller(object):
         # load json files
         self.user_to_forums = load_json('user_to_forums', default={})
         self.forum_to_users = load_json('forum_to_users', default={})
+        self.all_users = load_json('all_users', default={})
         self.done_with = set(load_json('done_with', default=[]))
         self.forum_threads = load_json('forum_threads', default={})
         self.thread_posts = load_json('thread_posts', default={})
@@ -90,7 +92,11 @@ class DataPuller(object):
     ##  Users and forums  #####################################################
     ###########################################################################
 
-    def pull_users(self, forum, min_users=100):
+    def pull_users(self, forum, min_users=1000):
+        """
+        Try to pull at least min_users of a forum's most active (public) users.
+        TODO: this function is ugly
+        """
         users = set(self.forum_to_users.get(forum, []))
         assert len(users) < min_users
         num_private = 0
@@ -103,95 +109,86 @@ class DataPuller(object):
                 res = self.api.request('forums.listMostActiveUsers', forum=forum,
                                        cursor=cursor, limit=100)
             except APIError as err:
-                print err
-                break
+                raise err
             except FormattingError as err:
                 print err
                 break
 
-            new_users = set(u['id'] for u in res if not (u['isAnonymous'] or
-                                                         u['isPrivate']))
+            users |= set(u['id'] for u in res if not
+                         (u['isAnonymous'] or u['isPrivate']))
 
             # count how many of these people are private
             for u in res:
-                if not u['isAnonymous'] and u['id'] not in users and u['isPrivate']:
+                if u['isAnonymous']:
+                    continue
+                self.all_users[u['id']] = u
+                if u['isPrivate']:
                     num_private += 1
 
-            # set operations woohoo
-            users |= new_users
+            print 'public:', len(users), 'private:', num_private
 
             # break if there are no more pages
             if i > 0 and not res.cursor['hasNext']:
                 self.done_with.add(forum)
                 break
-
             i += 1
-            print 'public:', len(users), 'private:', num_private
 
         return list(users)
 
     def pull_forums_for_user(self, user_id):
+        """
+        Request a user's most active forums (up to 100)
+        """
         try:
             res = self.api.request('users.listMostActiveForums', user=user_id, limit=100)
             return [r.get('id') for r in res]
-            return [r.get('id') for r in res]
         except APIError as err:
             print 'error on user id', user_id, err
-            return None
+            raise err
 
-    def pull_forum_users(self, forum, min_users=100):
-        print 'pulling most active users for forum', repr(forum)
-        self.forum_to_users[forum] = self.pull_users(forum, min_users=1000)
+    def pull_all_user_forums(self, min_users):
+        """
+        Go through users in our forum-to-user mapping and, for each one, pull
+        a list of the forums they're most active in.
+        """
+        forums = sorted(self.get_forum_activity().items(), key=lambda i: -i[1])
 
-        print 'saving forum data...'
-        save_json(self.forum_to_users, 'forum_to_users')
-        save_json(list(self.done_with), 'done_with')
+        # loop over forums in order of most active
+        for forum in forums:
+            # check how many of these users we already have
+            total_users = self.forum_to_users[forum]:
+            without_data = [u for u in total_users if u not in
+                            self.user_to_forums]
+            with_data = len(total_users) - len(without_data)
 
-        # for each of the most active users of this forum, find what forums
-        # they're most active on
-        for uid in self.forum_to_users[forum]:
-            if uid in self.user_to_forums:
+            # only get a few for each forum
+            if with_data >= len(total_users) or with_data >= min_users:
+                print 'forum', forum, 'has enough users:', with_data
                 continue
 
-            # only pull data for min_users user IDs
-            num_users = len([u for u in self.forum_to_users[forum] if u in
-                             self.user_to_forums])
-            if num_users >= min_users:
-                print 'forum', forum, 'has enough users:', num_users
-                break
+            # for each of the most active users of this forum, find what forums
+            # they're most active on
+            for uid in without_data:
+                print 'pulling most active forums for user', uid
+                self.user_to_forums[uid] = self.pull_forums_for_user(uid)
 
-            print 'pulling most active forums for user', uid
+            print 'saving user-forum data...'
+            save_json(self.user_to_forums, 'user_to_forums')
 
-            # try to get data for this guy
-            uf = self.pull_forums_for_user(uid)
-            if uf is None:
-                # most likely hit api limit
-                break
+    def pull_all_forum_users(self, min_users=1000):
+        """
+        Loop over forums and pull in active user lists for each one
+        """
+        # loop over forums in order of most active
+        forums = sorted(self.get_forum_activity().items(), key=lambda i: -i[1])
+        for forum in forums:
+            print 'pulling most active users for forum', repr(forum)
+            self.forum_to_users[forum] = self.pull_users(forum, min_users)
 
-            # store list of forums this user's active in
-            self.user_to_forums[uid] = uf
-
-        print 'saving user data...'
-        save_json(self.user_to_forums, 'user_to_forums')
-
-    def pull_all_forums(self, min_users):
-        # remove forums we've collected enough data on
-        def cull_forums(forums):
-            for f, users in self.forum_to_users.items():
-                if len([u for u in users if u in self.user_to_forums]) >= \
-                        min_users or f in self.done_with:
-                    del forums[f]
-            return forums
-
-        forums = cull_forums(self.get_forum_activity())
-
-        # loop indefinitely, gathering data
-        while forums:
-            forum = sorted(forums.items(), key=lambda i: -i[1])[0][0]
-            self.pull_forum_users(forum, min_users)
-
-            # update forum rankings with new data
-            forums = cull_forums(self.get_forum_activity())
+            print 'saving forum-user data...'
+            save_json(self.forum_to_users, 'forum_to_users')
+            save_json(list(self.done_with), 'done_with')
+            save_json(self.all_users, 'all_users')
 
     ###########################################################################
     ##  Threads and posts  ####################################################
@@ -289,7 +286,7 @@ class DataPuller(object):
         save_json(self.forum_threads, 'forum_threads')
 
     def pull_all_threads(self):
-        forums = get_weights(self)
+        forums = self.get_weights()
         for f in forums.keys():
             if f in self.forum_threads:
                 del forums[f]
@@ -405,10 +402,17 @@ if __name__ == '__main__':
     puller = DataPuller(sys.argv[1])
 
     activity = puller.get_forum_activity()
-    for i in sorted(activity.items(), key=lambda i: -i[1])[:100]:
-        color = 'green' if i[0] in puller.forum_to_users else 'red'
-        print colored('%s: %d' % i, color)
+    threads = puller.get_forum_threads()
 
-    #puller.pull_all_forums(min_users=100)
+    for forum, n_posts in sorted(activity.items(), key=lambda i: -i[1])[:100]:
+        color = 'green' if forum in puller.forum_to_users else 'red'
+        n_users_tot = len(puller.forum_to_users[forum])
+        n_users_dl = len([u for u in puller.forum_to_users[forum] if u in
+                          puller.user_to_forums])
+        n_threads = len(threads[forum])
+        tup = (n_posts, n_users_dl, n_users_tot, n_threads)
+        print colored(forum, color), '%d comments, %d/%d active users, %d threads' % tup
+
+    puller.pull_all_forum_users()
     #puller.pull_all_threads()
-    puller.pull_all_posts()
+    #puller.pull_all_posts()

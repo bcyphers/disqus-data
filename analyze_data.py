@@ -17,12 +17,13 @@ from nltk.tokenize import RegexpTokenizer
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import NMF, LatentDirichletAllocation
+from sklearn.cluster import KMeans
 
 from collect_data import *
 
 ## Misc ranking functions
 
-def pagerank(df, iters = 10):
+def pagerank(df, iters=10):
     for c in df.columns:
         df[c][c] = 0
     A = df.values.T.astype(float)
@@ -35,15 +36,14 @@ def pagerank(df, iters = 10):
 
 def get_correlations(df):
     # Generate a correlation matrix for edge graph
-    out = pd.DataFrame(columns=df.columns, index=df.index)
-    for i, arr in enumerate(np.corrcoef(df.values.T.astype(float))):
-        for j in range(len(arr)):
-            out[df.columns[j]][df.columns[i]] = arr[j]
-    return out
+    # input: DataFrame with columns=variables, index=entities
+    # output: symmetric correlation mateix with N = len(entities)
+    return pd.DataFrame(columns=df.index, index=df.index,
+                        data=np.corrcoef(df.values.astype(float)))
 
 
 def print_correlations(df):
-    for i, arr in enumerate(np.corrcoef(df.values.T.astype(float))):
+    for i, arr in enumerate(np.corrcoef(df.values.astype(float))):
         a = arr[:]
         a[i] = 0
         print df.columns[i], colored(df.columns[a.argmax()], 'green'), max(a), \
@@ -53,14 +53,27 @@ def print_correlations(df):
 def get_correlation_graph(df):
     df = get_correlations(df)
     for c in df.columns:
-        df[c] = df[c].map(lambda v: v**2)
+        df[c] = df[c].map(lambda v: v / 2. + .5)
+        df[c] = df[c].map(lambda v: v**3)
         df[c] /= sum(df[c])
 
     return df
 
 
 def hierarchical_cluster(df):
-    pass # TODO
+    pass # todo
+
+
+def k_means_cluster(df, n_clusters=10):
+    # dataframe: index = entities, columns = variables
+    kmeans = KMeans(n_clusters=n_clusters).fit(df.values)
+    clusters = []
+    for i in range(n_clusters):
+        cluster = [df.index[j] for j, label in enumerate(kmeans.labels_)
+                   if label == i]
+        clusters.append(cluster)
+
+    return clusters
 
 
 def do_mcl(df, e, r, subset=None):
@@ -108,16 +121,22 @@ def do_mcl(df, e, r, subset=None):
 class StemTokenizer(object):
     BLACKLIST = ['http', 'https', 'www', 'jpg', 'png', 'com', 'disquscdn',
                  'uploads', 'images']
-    def __init__(self):
+
+    def __init__(self, stem=False):
+        self.stem = stem
         self.stemmer = SnowballStemmer('english')
         self.tokenizer = RegexpTokenizer(r'\w+')
+
     def __call__(self, doc):
         stop = stopwords.words('english') + self.BLACKLIST
         out = []
         for t in self.tokenizer.tokenize(doc):
-            if t not in stop:
+            # exclude single-letter tokens
+            if t not in stop and len(t) >= 2:
+                # optional: do stemming
+                if self.stem:
+                    t = self.stemmer.stem(t)
                 out.append(t)
-                #out.append(self.stemmer.stem(t))
         return out
 
 
@@ -143,7 +162,9 @@ class TopicModeler(object):
         self.build_documents()
 
     def build_documents(self):
-        # generate corpi of text from disjoint json files
+        """
+        Generate corpus of text from disjoint json files.
+        """
         self.docs = defaultdict(dict)
         self.thread_docs = defaultdict(str)
 
@@ -153,18 +174,20 @@ class TopicModeler(object):
                 try:
                     with open('threads/%s.json' % tid) as f:
                         js = json.load(f)
-                        self.docs[forum][tid] = '\n'.join([p['text'] for p in js])
-                        self.thread_docs[tid] = self.docs[forum][tid]
+                        full_text = '\n'.join([p['text'] for p in js])
+                        self.docs[forum][tid] = full_text
+                        self.thread_docs[tid] = full_text
                 except IOError:
                     print 'data for thread', tid, 'is no good'
                     del self.data.thread_posts[tid]
                     save_json(self.data.thread_posts, 'thread_posts')
 
-    def generate_topics(self):
-        # train topic models
-
-        print 'gathering documents...'
+    def train(self):
+        """
+        Train a topic model on the entire text corpus.
+        """
         # self.docs is a dict of dicts of strings. We want a list of strings.
+        print 'gathering documents...'
         all_docs = []
         for forum, texts in self.docs.iteritems():
             all_docs.extend(texts.values())
@@ -206,10 +229,11 @@ class TopicModeler(object):
         print
         print 'Topics:'
 
-        self.topics = {}
-        for i, group in enumerate(self.model.components_):
-            self.topics[i] = ', '.join(best_feats(vec_names, group))
-            print '%d.' % (i+1), self.topics[i]
+        self.topics = []
+        for group in self.model.components_:
+            topic = ', '.join(best_feats(vec_names, group))
+            self.topics.append(topic)
+            print '%d.' % len(self.topics), topic
 
     def predict_topics_forums(self, forums):
         docs = []
@@ -225,6 +249,13 @@ class TopicModeler(object):
             for j, idx in enumerate(r.argsort()[:-4:-1]):
                 print '%d. (%.3f)' % (j+1, r[idx]), self.topics[idx]
 
+        avg = sum(res) / len(res)
+        print 'Top topics for group %s:' % forums
+        for i, idx in enumerate(avg.argsort()[:-4:-1]):
+            print '%d. (%.3f)' % (i+1, avg[idx]), self.topics[idx]
+
+        return pd.DataFrame(index=forums, columns=self.topics, data=res)
+
     def predict_topics_threads(self, threads):
         docs = []
         for thread in threads:
@@ -234,8 +265,10 @@ class TopicModeler(object):
         res = self.model.transform(vec)
 
         for i, r in enumerate(res):
-            print 'Topics for thread on "%s":' % \
+            print 'Top topics for thread on "%s":' % \
                 self.data.all_threads[threads[i]]
             for j, idx in enumerate(r.argsort()[:-4:-1]):
                 print '%d. (%.3f)' % (j+1, r[idx]), self.topics[idx]
+
+        return pd.DataFrame(index=threads, columns=self.topics, data=res)
 
