@@ -101,6 +101,7 @@ class DataPuller(object):
         assert len(users) < min_users
         num_private = 0
         i = 0
+        errs = 0
 
         print 'trying to pull', min_users - len(users), 'more users for forum', forum
         while len(users) < min_users:
@@ -112,7 +113,13 @@ class DataPuller(object):
                 raise err
             except FormattingError as err:
                 print err
-                break
+                errs += 1
+                i += 1
+                if errs > 2:
+                    # give up on this shit
+                    self.done_with.add(forum)
+                    break
+                continue
 
             users |= set(u['id'] for u in res if not
                          (u['isAnonymous'] or u['isPrivate']))
@@ -326,6 +333,10 @@ class DataPuller(object):
         return utf
 
     def get_forum_edges(self, dedup=True):
+        """
+        build a graph with each forum pointing to all the other forums its top
+        users frequent
+        """
         forum_edges = {}
         if dedup:
             forum_to_users = self.get_deduped_ftu()
@@ -357,14 +368,18 @@ class DataPuller(object):
 
         return counts
 
-    # generate a transition matrix for this graph
-    def build_matrix(self, dedup=True, N=None):
+    def build_matrix(self, dedup=True, N=None, norm='l1'):
+        """
+        Convert the sparse representation that get_edges gives us into a dense
+        transition matrix with normalized columns
+        """
         if dedup:
             forum_to_users = self.get_deduped_ftu()
         else:
             forum_to_users = self.forum_to_users
 
         edges = self.get_forum_edges(dedup)
+
         forums = [k for k in edges.keys() if len(forum_to_users[k]) > 0]
         if N is not None:
             weights = self.get_weights(dedup)
@@ -381,7 +396,10 @@ class DataPuller(object):
                 df[f1][f2] = float(users_of_f2)
 
             # column normalize
-            df[f1] /= sum(df[f1])
+            if norm == 'l1':
+                df[f1] /= sum(df[f1])
+            elif norm == 'l2':
+                df[f1] /= np.sqrt(sum(df[f1]**2))
 
         return df
 
@@ -420,10 +438,12 @@ if __name__ == '__main__':
         n_users_tot = len(puller.forum_to_users[forum])
         n_users_dl = len([u for u in puller.forum_to_users[forum] if u in
                           puller.user_to_forums])
-        n_threads = len(threads[forum])
-        tup = (n_posts, n_users_dl, n_users_tot, n_threads)
-        print colored(forum, color), '%d comments, %d/%d active users, %d threads' % tup
+        n_threads_tot = len(puller.forum_threads[forum])
+        n_threads_dl = len(threads[forum])
+        tup = (n_posts, n_threads_tot, n_users_dl, n_users_tot, n_threads_dl)
+        print colored(forum, color), '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
-    puller.pull_all_forum_users()
+    #puller.pull_all_forum_users()
+    puller.pull_all_user_forums()
     #puller.pull_all_threads()
     #puller.pull_all_posts()
