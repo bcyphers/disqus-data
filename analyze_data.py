@@ -55,8 +55,9 @@ def print_correlations(df):
 def get_correlation_graph(df):
     df = get_correlations(df)
     for c in df.columns:
-        df[c] = df[c].map(lambda v: v / 2. + .5)
-        df[c] = df[c].map(lambda v: v**3)
+        #df[c] = df[c].map(lambda v: v / 2. + .5)
+        df[c] = df[c].map(lambda v: v if v > 0 else 0)
+        df[c] = df[c].map(lambda v: v**2)
         df[c] /= sum(df[c])
 
     return df
@@ -211,7 +212,6 @@ class TopicModeler(object):
 
         return docs
 
-
     def vectorize(self, vec_type=None, forums=None, threads=None):
         # self.docs is a dict of dicts of strings. We want a list of strings.
         if threads:
@@ -224,7 +224,7 @@ class TopicModeler(object):
             docs = self.sample_docs()
 
         print 'vectorizing', len(docs), 'documents of total length', \
-            sum([len(d) for d in docs]), 'characters'
+            sum([len(d) for d in docs])/1000, 'KB'
 
         vec_type = vec_type or self.vector_type
 
@@ -274,7 +274,11 @@ class TopicModeler(object):
         else:
             raise model_type
 
-        self.model.fit(vectors)
+        print 'fitting model of type', model_type, 'to', vectors.shape[0], 'with', \
+            self.n_topics, 'topics'
+
+        res = self.model.fit_transform(vectors)
+        pdb.set_trace()
 
         # utility function for mapping top word features to their actual text
         best_feats = lambda fnames, feats: [fnames[i] for i in feats.argsort()[:-6:-1]]
@@ -323,6 +327,7 @@ class TopicModeler(object):
 
         if not verbose or len(res) > 1:
             avg = sum(res) / len(res)
+            # compare against the baseline
             print
             print 'Top topics for group %s:' % forums
             for i, idx in enumerate(avg.argsort()[:-6:-1]):

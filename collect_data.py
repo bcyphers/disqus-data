@@ -142,17 +142,6 @@ class DataPuller(object):
 
         return list(users)
 
-    def pull_forums_for_user(self, user_id):
-        """
-        Request a user's most active forums (up to 100)
-        """
-        try:
-            res = self.api.request('users.listMostActiveForums', user=user_id, limit=100)
-            return [r.get('id') for r in res]
-        except APIError as err:
-            print 'error on user id', user_id, err
-            raise err
-
     def pull_all_user_forums(self, min_users):
         """
         Go through users in our forum-to-user mapping and, for each one, pull
@@ -174,11 +163,32 @@ class DataPuller(object):
                 print 'forum', forum, 'has enough users:', with_data
                 continue
 
+            to_go = min_users - with_data
+
+            print
+            print 'pulling data for', to_go, 'users from forum', forum
+
             # for each of the most active users of this forum, find what forums
             # they're most active on
-            for uid in without_data:
+            for uid in without_data[:to_go]:
                 print 'pulling most active forums for user', uid
-                self.user_to_forums[uid] = self.pull_forums_for_user(uid)
+                try:
+                    res = self.api.request('users.listMostActiveForums',
+                                           user=uid, limit=100)
+                    self.user_to_forums[uid] = [r.get('id') for r in res]
+                except APIError as err:
+                    if int(err.code) == 12:
+                        # user is private: remove them from the forum's list
+                        print 'user id', uid, 'is private'
+                        self.forum_to_users[forum].remove(uid)
+                    elif int(err.code) == 13:
+                        print 'API rate limit exceeded'
+                        # todo: write safe exit function
+                        print 'saving user-forum data...'
+                        save_json(self.user_to_forums, 'user_to_forums')
+                        sys.exit(0)
+                    else:
+                        raise err
 
             print 'saving user-forum data...'
             save_json(self.user_to_forums, 'user_to_forums')
@@ -444,6 +454,6 @@ if __name__ == '__main__':
         print colored(forum, color), '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
     #puller.pull_all_forum_users()
-    puller.pull_all_user_forums()
+    puller.pull_all_user_forums(250)
     #puller.pull_all_threads()
     #puller.pull_all_posts()
