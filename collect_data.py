@@ -25,8 +25,11 @@ DEDUP = {
     'bloombergview': 'bloomberg',
     'pbsnewshourformsrodeo': 'pbsnewshour',
     'pj-instapundit': 'pj-media',
-    'spectator-new-blogs': 'spectator-org',
+    'spectator-new-blogs': 'spectator-new-www',
+    'spectatorwww': 'spectator-new-www',
     'theamericanspectator': 'spectator-org',
+    'spectatororg': 'spectator-org',
+    'channel-theavclubafterdark': 'avclub',
 }
 
 
@@ -87,6 +90,17 @@ class DataPuller(object):
         for ts in self.forum_threads.values():
             self.all_threads.update({t: ts[t]['clean_title'] for t in ts})
 
+    def save_exit(self):
+        print 'saving all data...'
+        # save all json files
+        save_json(self.user_to_forums, 'user_to_forums')
+        save_json(self.forum_to_users, 'forum_to_users')
+        save_json(self.all_users, 'all_users')
+        save_json(list(self.done_with), 'done_with')
+        save_json(self.forum_threads, 'forum_threads')
+        save_json(self.thread_posts, 'thread_posts')
+
+        sys.exit(0)
 
     ###########################################################################
     ##  Users and forums  #####################################################
@@ -177,16 +191,16 @@ class DataPuller(object):
                                            user=uid, limit=100)
                     self.user_to_forums[uid] = [r.get('id') for r in res]
                 except APIError as err:
-                    if int(err.code) == 12:
+                    if int(err.code) == 2:
+                        print 'bad user id:', uid
+                        self.forum_to_users[forum].remove(uid)
+                    elif int(err.code) == 12:
                         # user is private: remove them from the forum's list
                         print 'user id', uid, 'is private'
                         self.forum_to_users[forum].remove(uid)
                     elif int(err.code) == 13:
                         print 'API rate limit exceeded'
-                        # todo: write safe exit function
-                        print 'saving user-forum data...'
-                        save_json(self.user_to_forums, 'user_to_forums')
-                        sys.exit(0)
+                        self.save_exit()
                     else:
                         raise err
 
@@ -366,7 +380,8 @@ class DataPuller(object):
                 for f in user_to_forums.get(uid, []):
                     out_counts[f] += 1
 
-            forum_edges[forum] = out_counts
+            if sum(out_counts.values()):
+                forum_edges[forum] = out_counts
 
         return forum_edges
 
@@ -378,7 +393,7 @@ class DataPuller(object):
 
         return counts
 
-    def build_matrix(self, dedup=True, N=None, norm='l1'):
+    def build_matrix(self, dedup=True, N=None, norm=None, cutoff=2.5):
         """
         Convert the sparse representation that get_edges gives us into a dense
         transition matrix with normalized columns
@@ -389,10 +404,10 @@ class DataPuller(object):
             forum_to_users = self.forum_to_users
 
         edges = self.get_forum_edges(dedup)
-
-        forums = [k for k in edges.keys() if len(forum_to_users[k]) > 0]
+        forums = edges.keys()
         if N is not None:
-            weights = self.get_weights(dedup)
+            weights = self.get_forum_activity(dedup)
+            #weights = self.get_weights(dedup)
             forums = sorted(forums, key=lambda f: -weights[f])[:N]
 
         df = pd.DataFrame(columns=forums, index=forums)
@@ -405,11 +420,25 @@ class DataPuller(object):
                 users_of_f2 = edges[f1].get(f2, 0)
                 df[f1][f2] = float(users_of_f2)
 
-            # column normalize
-            if norm == 'l1':
-                df[f1] /= sum(df[f1])
+        to_drop = []
+        for f in forums:
+            num_users = len([u for u in forum_to_users[f] if u in self.user_to_forums])
+            connectivity = sum(df.ix[f]) / num_users
+            if connectivity < cutoff:
+                print 'forum', f, "doesn't have enough connections:", connectivity
+                to_drop.append(f)
+                continue
+
+            # row normalize
+            if norm is None:
+                df.ix[f] /= num_users
+            elif norm == 'l1':
+                df.ix[f] /= sum(df.ix[f])
             elif norm == 'l2':
-                df[f1] /= np.sqrt(sum(df[f1]**2))
+                df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
+
+        df = df.drop(to_drop)
+        print df.shape
 
         return df
 
@@ -445,7 +474,7 @@ if __name__ == '__main__':
 
     for forum, n_posts in sorted(activity.items(), key=lambda i: -i[1])[:100]:
         color = 'green' if forum in puller.forum_to_users else 'red'
-        n_users_tot = len(puller.forum_to_users[forum])
+        n_users_tot = len(puller.forum_to_users.get(forum, []))
         n_users_dl = len([u for u in puller.forum_to_users[forum] if u in
                           puller.user_to_forums])
         n_threads_tot = len(puller.forum_threads[forum])
@@ -454,6 +483,6 @@ if __name__ == '__main__':
         print colored(forum, color), '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
     #puller.pull_all_forum_users()
-    puller.pull_all_user_forums(250)
+    puller.pull_all_user_forums(100)
     #puller.pull_all_threads()
     #puller.pull_all_posts()
