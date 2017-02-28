@@ -294,11 +294,12 @@ class DataPuller(object):
             json.dump(all_data, f)
         save_json(self.thread_posts, 'thread_posts')
 
-    def pull_all_posts(self):
+    def pull_all_posts(self, n_threads=25):
         threads = []
         for ts in self.forum_threads.values():
             # only first ten per forum for now
-            ts = sorted(ts.items(), key=lambda i: -i[1]['postsInInterval'])[:10]
+            ts = sorted(ts.items(),
+                        key=lambda i: -i[1]['postsInInterval'])[:n_threads]
             threads.extend([t for i, t in ts if i not in self.thread_posts])
 
         # do longest threads first
@@ -405,122 +406,6 @@ class DataPuller(object):
 
         return counts
 
-    def build_matrix(self, dedup=True, N=None, norm=None, cutoff=1.5,
-                     category=None):
-        """
-        Convert the sparse representation that get_edges gives us into a dense
-        transition matrix with normalized columns
-        """
-        if dedup:
-            forum_to_users = self.get_deduped_ftu()
-        else:
-            forum_to_users = self.forum_to_users
-
-        edges = self.get_forum_edges(dedup)
-        forums = edges.keys()
-        if N is not None:
-            weights = self.get_forum_activity(dedup)
-            #weights = self.get_weights(dedup)
-            if category:
-                forums = sorted([f for f in forums if
-                                self.forum_details[f]['category'] == category],
-                                key=lambda f: -weights[f])[:N]
-            else:
-                forums = sorted(forums, key=lambda f: -weights[f])[:N]
-
-        df = pd.DataFrame(columns=forums, index=forums)
-
-        # iterate over all forums that we have outgoing data for
-        for f1 in forums:
-            for f2 in forums:
-                # number of top users of forum f1 for whom f2 is a top forum
-                # "How many top users of f1 also frequent f2?"
-                # think of it like the weight of the edge from f1 to f2
-                users_of_f2 = edges[f1].get(f2, 0)
-                df[f2][f1] = float(users_of_f2)
-
-        to_drop = []
-        for f in forums[:]:
-            num_users = len([u for u in forum_to_users[f] if u in self.user_to_forums])
-            connectivity = sum(df.ix[f]) / num_users
-            if connectivity < cutoff:
-                print 'forum', f, "doesn't have enough connections:", connectivity
-                to_drop.append(f)
-
-        df = df.drop(to_drop)
-
-        if norm is None:
-            for f in df.index:
-                num_users = len([u for u in forum_to_users[f]
-                                 if u in self.user_to_forums])
-                df.ix[f] /= num_users
-        elif norm == 'l1':
-            for f in df.columns:
-                df[f] /= sum(df[f])
-        elif norm == 'l2':
-            for f in df.index:
-                df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
-
-        print df.shape
-
-        return df
-
-    def build_other_matrix(self, dedup=True, N=None, norm=None):
-        """
-        Build filtered matrix?
-        Build matrix with different kind of edges?
-        """
-        if dedup:
-            forum_to_users = self.get_deduped_ftu()
-        else:
-            forum_to_users = self.forum_to_users
-
-        edges = self.get_forum_edges(dedup)
-        forums = edges.keys()
-        if N is not None:
-            weights = self.get_forum_activity(dedup)
-            #weights = self.get_weights(dedup)
-            forums = sorted([f for f in forums if
-                            self.forum_details[f]['category'] == 'News'],
-                            key=lambda f: -weights[f])[:N]
-
-        df = pd.DataFrame(columns=forums, index=forums)
-
-        # iterate over all forums that we have outgoing data for
-        for f1 in forums:
-            for f2 in forums:
-                # number of top users of forum f1 for whom f2 is a top forum
-                # "How many top users of f1 also frequent f2?"
-                # think of it like the weight of the edge from f1 to f2
-                users_of_f2 = edges[f1].get(f2, 0)
-                df[f2][f1] = float(users_of_f2)
-
-        to_drop = []
-        for f in forums[:]:
-            num_users = len([u for u in forum_to_users[f] if u in self.user_to_forums])
-            connectivity = sum(df.ix[f]) / num_users
-            if connectivity < cutoff:
-                print 'forum', f, "doesn't have enough connections:", connectivity
-                to_drop.append(f)
-
-        df = df.drop(to_drop)
-
-        if norm is None:
-            for f in df.index:
-                num_users = len([u for u in forum_to_users[f]
-                                 if u in self.user_to_forums])
-                df.ix[f] /= num_users
-        elif norm == 'l1':
-            for f in df.columns:
-                df[f] /= sum(df[f])
-        elif norm == 'l2':
-            for f in df.index:
-                df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
-
-        print df.shape
-
-        return df
-
     def get_forum_threads(self):
         threads = {}
         for f, ts in self.forum_threads.items():
@@ -561,8 +446,8 @@ if __name__ == '__main__':
         tup = (n_posts, n_threads_tot, n_users_dl, n_users_tot, n_threads_dl)
         print colored(forum, color), '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
-    puller.pull_all_forum_users()
+    #puller.pull_all_forum_users()
     #puller.pull_all_user_forums(100)
     #puller.pull_all_threads()
-    #puller.pull_all_posts()
+    puller.pull_all_posts(n_threads=10)
     #puller.pull_forum_details()
