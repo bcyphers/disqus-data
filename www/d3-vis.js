@@ -11,7 +11,9 @@ var simulation = d3.forceSimulation()
     .force("charge", d3.forceManyBody())
     .force("center", d3.forceCenter(width / 2, height / 2))
     .force("collide", d3.forceCollide().radius(
-          function(d) { return d.radius + 0.5; }).iterations(2));
+          function(d) { return d.radius + 0.5; }).iterations(2))
+    .force("y", d3.forceY(0).strength(0.05))
+    .force("x", d3.forceX(0).strength(0.05));
 
 var maxRadius = 50,
     padding = 6;
@@ -26,7 +28,7 @@ d3.select(window)
     chart.attr("height", targetWidth / aspect);
   });
 
-d3.json("forums.json", function(error, graph) {
+d3.json("d3-forums.json", function(error, graph) {
   if (error) throw error;
 
   var link = svg.append("g")
@@ -42,7 +44,8 @@ d3.json("forums.json", function(error, graph) {
     .data(graph.nodes)
     .enter().append("circle")
       .attr("r", function(d) { return d.radius; })
-      .attr("fill", function(d) { return color(d.group); })
+      .attr("fill", function(d) { console.log(d.group); return color(d.group); })
+      .attr("id", function(d) { return "node-" + d.id; })
       .call(d3.drag()
           .on("start", dragstarted)
           .on("drag", dragged)

@@ -30,7 +30,8 @@ from collect_data import *
 
 
 def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
-                      cutoff=1.5, src_cat=None, tar_cat=None):
+                      cutoff=1.5, src_cat=None, tar_cat=None, sources=None,
+                      targets=None):
     """
     Convert the sparse representation that get_edges gives us into a dense
     (directed) transition matrix with normalized rows
@@ -48,8 +49,10 @@ def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
         don't include them
     src_cat (str): if provided, only use forums from this category as sources
     tar_cat (str): if provided, only use this category as targets
+    src_group (list[str]): if provided, this is the group of sources
+    tar_group (list[str]): if provided, this is the group of targets
 
-    returns: MxN matrix
+    returns: MxN matrix of graph edges
     """
 
     if dedup:
@@ -70,44 +73,48 @@ def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
     weights = data.get_forum_activity(dedup)
     #weights = data.get_weights(dedup) # could also do this
 
-    # sort all possible sources by our weight metric
-    all_sources = sorted(edges.keys(), key=lambda f: -weights[f])
-    if src_cat:
-        all_sources = [f for f in all_sources if
-                       data.forum_details[f]['category'] == category]
+    # build sources list if necessary
+    if sources is None:
+        # sort all possible sources by our weight metric
+        all_sources = sorted(edges.keys(), key=lambda f: -weights[f])
+        if src_cat:
+            all_sources = [f for f in all_sources if
+                           data.forum_details[f]['category'] == category]
 
-    # cull sources that don't meet our cutoff
-    sources = []
-    for f in all_sources:
-        num_users = float(len(forum_out_links(f)))
-        connectivity = sum(edges[f].values()) / num_users
-        if connectivity < cutoff:
-            continue
-
-        if M is None or len(sources) < M:
-            sources.append(f)
-
-
-    if square:
-        # well that was easy
-        targets = sources[:]
-    else:
-        # generate a mapping of target forums to their occurrences in the graph
-        # weighted by number of users for source forum
-        weights = defaultdict(float)
-        for f, counts in edges.iteritems():
-            # only count forums that are in our index
-            if f not in sources:
+        # cull sources that don't meet our cutoff
+        sources = []
+        for f in all_sources:
+            num_users = float(len(forum_out_links(f)))
+            connectivity = sum(edges[f].values()) / num_users
+            if connectivity < cutoff:
                 continue
 
-            for t, count in counts.iteritems():
-                # do category filtering if necessary
-                category = data.forum_details.get(t, {}).get('category', -1)
-                if tar_cat is None or tar_cat == category:
-                    weights[t] += float(count) / len(forum_out_links(f))
+            if M is None or len(sources) < M:
+                sources.append(f)
 
-        # take the top N most-mentioned targets
-        targets = sorted(weights.keys(), key=lambda t: -weights[t])[:N]
+
+    # build targets list if necessary
+    if targets is None:
+        if square:
+            # well that was easy
+            targets = sources[:]
+        else:
+            # generate a mapping of target forums to their occurrences in the graph
+            # weighted by number of users for source forum
+            weights = defaultdict(float)
+            for f, counts in edges.iteritems():
+                # only count forums that are in our index
+                if f not in sources:
+                    continue
+
+                for t, count in counts.iteritems():
+                    # do category filtering if necessary
+                    category = data.forum_details.get(t, {}).get('category', -1)
+                    if tar_cat is None or tar_cat == category:
+                        weights[t] += float(count) / len(forum_out_links(f))
+
+            # take the top N most-mentioned targets
+            targets = sorted(weights.keys(), key=lambda t: -weights[t])[:N]
 
     # M by N matrix
     df = pd.DataFrame(index=sources, columns=targets)
@@ -284,41 +291,3 @@ def plot_forums(matrix, groups, method='pca', n_groups=None, do_legend=False):
         plt.legend(*zip(*legend))
     plt.show()
 
-
-def generate_json_graph(data, path, e=2, r=3, **kwargs):
-    df = build_link_matrix(data, **kwargs)
-    cor = get_correlations(df)
-    groups = do_mcl(cor, e, r)
-
-    nodes = []
-    links = []
-    rev_groups = {}
-    for i, (k, group) in enumerate(groups.items()):
-        for forum in group:
-            rev_groups[forum] = k
-
-    for i, f1 in enumerate(cor.index):
-        weights = data.get_forum_activity()
-        for k in weights:
-            weights[k] = max(np.log(weights[k] / float(10000)), 1) * 5
-
-        node = {'id': f1,
-                'group': data.forum_details[f1]['category'],
-                'name': data.forum_details[f1]['name'],
-                'radius': weights[f1]}
-        nodes.append(node)
-
-        f1_top_5 = sorted(cor[f1])[-5]
-
-        for f2 in cor.columns[:i]:
-            f2_top_5 = sorted(cor[f2])[-5]
-            # cull weak links
-            if cor[f2][f1] > 0.1 and (cor[f2][f1] >= f1_top_5 or
-                                      cor[f2][f1] >= f2_top_5):
-                # ordering doesn't really matter here, the matrix is symmetrical
-                link = {'source': f1, 'target': f2, 'value': cor[f2][f1]}
-                links.append(link)
-
-    out = {'nodes': nodes, 'links': links}
-    with open(path, 'w') as f:
-        json.dump(out, f)

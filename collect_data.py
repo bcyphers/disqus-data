@@ -444,10 +444,11 @@ if __name__ == '__main__':
         n_threads_tot = len(puller.forum_threads[forum])
         n_threads_dl = len(threads[forum])
         tup = (n_posts, n_threads_tot, n_users_dl, n_users_tot, n_threads_dl)
-        print colored(forum, color), '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
+        print colored(forum, color),
+        print '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
-    #puller.pull_all_forum_users()
+    puller.pull_all_forum_users()
     #puller.pull_all_user_forums(100)
     #puller.pull_all_threads()
-    puller.pull_all_posts(n_threads=10)
+    #puller.pull_all_posts(n_threads=10)
     #puller.pull_forum_details()
