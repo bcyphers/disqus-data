@@ -34,8 +34,8 @@ DEDUP = {
 
 
 def save_json(data, name):
-    path = name + '.json'
-    bakpath = name + '.bak.json'
+    path = 'data/' + name + '.json'
+    bakpath = 'data/' + name + '.bak.json'
 
     # create a backup
     with open(path, 'a'): pass
@@ -53,8 +53,8 @@ def save_json(data, name):
 
 
 def load_json(name, default=None):
-    path = name + '.json'
-    bakpath = name + '.bak.json'
+    path = 'data/' + name + '.json'
+    bakpath = 'data/' + name + '.bak.json'
     try:
         with open(path) as f:
             data = json.load(f)
@@ -85,6 +85,7 @@ class DataPuller(object):
         self.done_with = set(load_json('done_with', default=[]))
         self.forum_threads = load_json('forum_threads', default={})
         self.thread_posts = load_json('thread_posts', default={})
+        self.forum_details = load_json('forum_details', default={})
 
         self.all_threads = {}
         for ts in self.forum_threads.values():
@@ -99,6 +100,7 @@ class DataPuller(object):
         save_json(list(self.done_with), 'done_with')
         save_json(self.forum_threads, 'forum_threads')
         save_json(self.thread_posts, 'thread_posts')
+        save_json(self.forum_details, 'forum_details')
 
         sys.exit(0)
 
@@ -225,6 +227,16 @@ class DataPuller(object):
             save_json(list(self.done_with), 'done_with')
             save_json(self.all_users, 'all_users')
 
+
+    def pull_forum_details(self):
+        for f in self.forum_to_users.keys():
+            if f not in self.forum_details:
+                print 'requesting data for forum', f
+                res = self.api.request('forums.details', forum=f)
+                self.forum_details[f] = res
+                print 'saving forum data...'
+                save_json(self.forum_details, 'forum_details')
+
     ###########################################################################
     ##  Threads and posts  ####################################################
     ###########################################################################
@@ -277,7 +289,7 @@ class DataPuller(object):
                 all_data.append(dic)
 
         print 'saving thread data...'
-        with open('threads/%s.json' % thread, 'w') as f:
+        with open('data/threads/%s.json' % thread, 'w') as f:
             # save the thread in its own file
             json.dump(all_data, f)
         save_json(self.thread_posts, 'thread_posts')
@@ -286,7 +298,7 @@ class DataPuller(object):
         threads = []
         for ts in self.forum_threads.values():
             # only first ten per forum for now
-            ts = sorted(ts.items(), key=lambda i: -i[1]['postsInInterval'])[:25]
+            ts = sorted(ts.items(), key=lambda i: -i[1]['postsInInterval'])[:10]
             threads.extend([t for i, t in ts if i not in self.thread_posts])
 
         # do longest threads first
@@ -393,7 +405,8 @@ class DataPuller(object):
 
         return counts
 
-    def build_matrix(self, dedup=True, N=None, norm=None, cutoff=2.5):
+    def build_matrix(self, dedup=True, N=None, norm=None, cutoff=1.5,
+                     category=None):
         """
         Convert the sparse representation that get_edges gives us into a dense
         transition matrix with normalized columns
@@ -408,7 +421,12 @@ class DataPuller(object):
         if N is not None:
             weights = self.get_forum_activity(dedup)
             #weights = self.get_weights(dedup)
-            forums = sorted(forums, key=lambda f: -weights[f])[:N]
+            if category:
+                forums = sorted([f for f in forums if
+                                self.forum_details[f]['category'] == category],
+                                key=lambda f: -weights[f])[:N]
+            else:
+                forums = sorted(forums, key=lambda f: -weights[f])[:N]
 
         df = pd.DataFrame(columns=forums, index=forums)
 
@@ -416,28 +434,89 @@ class DataPuller(object):
         for f1 in forums:
             for f2 in forums:
                 # number of top users of forum f1 for whom f2 is a top forum
+                # "How many top users of f1 also frequent f2?"
                 # think of it like the weight of the edge from f1 to f2
                 users_of_f2 = edges[f1].get(f2, 0)
-                df[f1][f2] = float(users_of_f2)
+                df[f2][f1] = float(users_of_f2)
 
         to_drop = []
-        for f in forums:
+        for f in forums[:]:
             num_users = len([u for u in forum_to_users[f] if u in self.user_to_forums])
             connectivity = sum(df.ix[f]) / num_users
             if connectivity < cutoff:
                 print 'forum', f, "doesn't have enough connections:", connectivity
                 to_drop.append(f)
-                continue
-
-            # row normalize
-            if norm is None:
-                df.ix[f] /= num_users
-            elif norm == 'l1':
-                df.ix[f] /= sum(df.ix[f])
-            elif norm == 'l2':
-                df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
 
         df = df.drop(to_drop)
+
+        if norm is None:
+            for f in df.index:
+                num_users = len([u for u in forum_to_users[f]
+                                 if u in self.user_to_forums])
+                df.ix[f] /= num_users
+        elif norm == 'l1':
+            for f in df.columns:
+                df[f] /= sum(df[f])
+        elif norm == 'l2':
+            for f in df.index:
+                df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
+
+        print df.shape
+
+        return df
+
+    def build_other_matrix(self, dedup=True, N=None, norm=None):
+        """
+        Build filtered matrix?
+        Build matrix with different kind of edges?
+        """
+        if dedup:
+            forum_to_users = self.get_deduped_ftu()
+        else:
+            forum_to_users = self.forum_to_users
+
+        edges = self.get_forum_edges(dedup)
+        forums = edges.keys()
+        if N is not None:
+            weights = self.get_forum_activity(dedup)
+            #weights = self.get_weights(dedup)
+            forums = sorted([f for f in forums if
+                            self.forum_details[f]['category'] == 'News'],
+                            key=lambda f: -weights[f])[:N]
+
+        df = pd.DataFrame(columns=forums, index=forums)
+
+        # iterate over all forums that we have outgoing data for
+        for f1 in forums:
+            for f2 in forums:
+                # number of top users of forum f1 for whom f2 is a top forum
+                # "How many top users of f1 also frequent f2?"
+                # think of it like the weight of the edge from f1 to f2
+                users_of_f2 = edges[f1].get(f2, 0)
+                df[f2][f1] = float(users_of_f2)
+
+        to_drop = []
+        for f in forums[:]:
+            num_users = len([u for u in forum_to_users[f] if u in self.user_to_forums])
+            connectivity = sum(df.ix[f]) / num_users
+            if connectivity < cutoff:
+                print 'forum', f, "doesn't have enough connections:", connectivity
+                to_drop.append(f)
+
+        df = df.drop(to_drop)
+
+        if norm is None:
+            for f in df.index:
+                num_users = len([u for u in forum_to_users[f]
+                                 if u in self.user_to_forums])
+                df.ix[f] /= num_users
+        elif norm == 'l1':
+            for f in df.columns:
+                df[f] /= sum(df[f])
+        elif norm == 'l2':
+            for f in df.index:
+                df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
+
         print df.shape
 
         return df
@@ -475,14 +554,15 @@ if __name__ == '__main__':
     for forum, n_posts in sorted(activity.items(), key=lambda i: -i[1])[:100]:
         color = 'green' if forum in puller.forum_to_users else 'red'
         n_users_tot = len(puller.forum_to_users.get(forum, []))
-        n_users_dl = len([u for u in puller.forum_to_users[forum] if u in
+        n_users_dl = len([u for u in puller.forum_to_users.get(forum, []) if u in
                           puller.user_to_forums])
         n_threads_tot = len(puller.forum_threads[forum])
         n_threads_dl = len(threads[forum])
         tup = (n_posts, n_threads_tot, n_users_dl, n_users_tot, n_threads_dl)
         print colored(forum, color), '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
-    #puller.pull_all_forum_users()
-    puller.pull_all_user_forums(100)
+    puller.pull_all_forum_users()
+    #puller.pull_all_user_forums(100)
     #puller.pull_all_threads()
     #puller.pull_all_posts()
+    #puller.pull_forum_details()

@@ -45,7 +45,7 @@ def get_correlations(df):
     input: DataFrame with columns=variables, index=entities
     output: symmetric correlation mateix with N = len(entities)
     """
-    # corrcoeff
+    # corrcoeff correlates the *rows* of a dataframe
     return pd.DataFrame(columns=df.index, index=df.index,
                         data=np.corrcoef(df.values.astype(float)))
 
@@ -193,7 +193,9 @@ def generate_json_graph(data, path, N=50, e=2, r=3):
         for k in weights:
             weights[k] = max(np.log(weights[k] / float(10000)), 1) * 5
 
-        node = {'id': f1, 'group': rev_groups[f1],
+        node = {'id': f1,
+                'group': rev_groups[f1],
+                'name': data.forum_details[f1]['name'],
                 'radius': weights[f1]}
         nodes.append(node)
 
@@ -205,7 +207,7 @@ def generate_json_graph(data, path, N=50, e=2, r=3):
             if cor[f2][f1] > 0.1 and (cor[f2][f1] >= f1_top_5 or
                                       cor[f2][f1] >= f2_top_5):
                 # ordering doesn't really matter here, the matrix is symmetrical
-                link = {'source': f1, 'target': f2, 'value': cor[f2][f1]}
+                link = {'source': f1, 'target': f2, 'value': cor[f2][f1] ** 2}
                 links.append(link)
 
     out = {'nodes': nodes, 'links': links}
@@ -270,7 +272,7 @@ class TopicModeler(object):
             for tid in threads:
                 # load data
                 try:
-                    with open('threads/%s.json' % tid) as f:
+                    with open('data/threads/%s.json' % tid) as f:
                         js = json.load(f)
                         full_text = '\n'.join([p['text'] for p in js])
                         docs[forum][tid] = full_text
