@@ -77,35 +77,92 @@ class DataPuller(object):
             key = kf.read().strip()
 
         self.api = DisqusAPI(key, None)
-        self.load()
 
-    def load(self):
-        # load json files
-        self.user_to_forums = load_json('user_to_forums', default={})
-        self.forum_to_users = load_json('forum_to_users', default={})
-        self.all_users = load_json('all_users', default={})
-        self.done_with = set(load_json('done_with', default=[]))
-        self.all_forum_threads = load_json('all_forum_threads', default={})
-        self.forum_threads = load_json('forum_threads', default={})
-        self.thread_posts = load_json('thread_posts', default={})
-        self.forum_details = load_json('forum_details', default={})
+        self._user_to_forums = None
+        self._forum_to_users = None
+        self._all_users = None
+        self._done_with = None
+        self._all_forum_threads = None
+        self._forum_threads = None
+        self._thread_posts = None
+        self._forum_details = None
 
-        self.all_threads = {}
-        #for ts in self.all_forum_threads.values():
-        for ts in self.forum_threads.values():
-            self.all_threads.update({t: ts[t]['clean_title'] for t in ts})
+    @property
+    def user_to_forums(self):
+        if self._user_to_forums is None:
+            self._user_to_forums = load_json('user_to_forums', default={})
+        return self._user_to_forums
+
+    @property
+    def forum_to_users(self):
+        if self._forum_to_users is None:
+            self._forum_to_users = load_json('forum_to_users', default={})
+        return self._forum_to_users
+
+    @property
+    def all_users(self):
+        if self._all_users is None:
+            self._all_users = load_json('all_users', default={})
+        return self._all_users
+
+    @property
+    def done_with(self):
+        if self._done_with is None:
+            self._done_with = set(load_json('done_with', default=[]))
+        return self._done_with
+
+    @property
+    def all_forum_threads(self):
+        if self._all_forum_threads is None:
+            self._all_forum_threads = load_json('all_forum_threads', default={})
+        return self._all_forum_threads
+
+    @property
+    def forum_threads(self):
+        if self._forum_threads is None:
+            self._forum_threads = load_json('forum_threads', default={})
+        return self._forum_threads
+
+    @property
+    def thread_posts(self):
+        if self._thread_posts is None:
+            self._thread_posts = load_json('thread_posts', default={})
+        return self._thread_posts
+
+    @property
+    def forum_details(self):
+        if self._forum_details is None:
+            self._forum_details = load_json('forum_details', default={})
+        return self._forum_details
+
+    @property
+    def all_threads(self):
+        if self._all_threads is None:
+            self._all_threads = {}
+            for ts in self.forum_threads().values():
+                self.all_threads.update({t: ts[t]['clean_title'] for t in ts})
+        return self._all_threads
 
     def save_exit(self):
         print 'saving all data...'
+
         # save all json files
-        save_json(self.user_to_forums, 'user_to_forums')
-        save_json(self.forum_to_users, 'forum_to_users')
-        save_json(self.all_users, 'all_users')
-        save_json(list(self.done_with), 'done_with')
-        save_json(self.all_forum_threads, 'all_forum_threads')
-        save_json(self.forum_threads, 'forum_threads')
-        save_json(self.thread_posts, 'thread_posts')
-        save_json(self.forum_details, 'forum_details')
+        if self._user_to_forums:
+            save_json(self._user_to_forums, 'user_to_forums')
+        if self._forum_to_users:
+            save_json(self._forum_to_users, 'forum_to_users')
+        if self._all_users:
+            save_json(self._all_users, 'all_users')
+        if self._done_with:
+            save_json(list(self._done_with), 'done_with')
+        if self._all_forum_threads:
+            save_json(self._all_forum_threads, 'all_forum_threads')
+        if self._forum_threads:
+            save_json(self._forum_threads, 'forum_threads')
+        if self._thread_posts:
+            save_json(self._thread_posts, 'thread_posts')
+        if self._forum_details:
+            save_json(self._forum_details, 'forum_details')
 
         sys.exit(0)
 
@@ -232,6 +289,32 @@ class DataPuller(object):
             save_json(list(self.done_with), 'done_with')
             save_json(self.all_users, 'all_users')
 
+    def pull_forum_activity(forum):
+        print 'Checking for recent posts in forum', forum
+        # pull most popular threads
+
+        try:
+            res = self.api.request('threads.listPopular', forum=forum,
+                                   interval='30d', limit=25)
+        except APIError as err:
+            print err
+            return
+        except FormattingError as err:
+            print err
+            return
+
+        # If there have been no new threads in 2017, this forum is dead
+        last_time = datetime(2007)
+        for r in res:
+            last_time = max(last_time, dateutil.parser.parse(r['createdAt']))
+
+        if last_time < datetime(2017, 1, 1):
+            print 'forum', forum, 'is dead!'
+            self.forum_details[forum]['isDead'] = True
+        else:
+            self.forum_details[forum]['isDead'] = False
+
+        save_json(self.forum_details, 'forum_details')
 
     def pull_forum_details(self):
         # first, get all forums that are part of our graph
@@ -240,6 +323,7 @@ class DataPuller(object):
                 print 'requesting data for forum', f
                 res = self.api.request('forums.details', forum=f)
                 self.forum_details[f] = res
+                self.pull_forum_activity(f)
                 print 'saving forum data...'
                 save_json(self.forum_details, 'forum_details')
 
@@ -250,6 +334,7 @@ class DataPuller(object):
                 print 'requesting data for forum', f
                 res = self.api.request('forums.details', forum=f)
                 self.forum_details[f] = res
+                self.pull_forum_activity(f)
                 print 'saving forum data...'
                 save_json(self.forum_details, 'forum_details')
 
@@ -334,8 +419,8 @@ class DataPuller(object):
 
     def pull_forum_threads(self, forum):
         # the first instant of President Trump's tenure
-        start_time = datetime(2017, 01, 20, 17, 0, 0)
-        end_time = datetime(2017, 02, 20, 17, 0, 0)
+        start_time = datetime(2017, 1, 20, 17, 0, 0)
+        end_time = datetime(2017, 2, 20, 17, 0, 0)
         last_time = start_time
         total_posts = 0
         self.all_forum_threads[forum] = {}
@@ -385,6 +470,7 @@ class DataPuller(object):
     def pull_popular_forum_threads(forum):
         print 'pulling top threads for forum', forum
         # pull most popular threads
+
         try:
             res = self.api.request('threads.listPopular', forum=forum,
                                    interval='30d', limit=100)
@@ -501,24 +587,24 @@ class DataPuller(object):
 if __name__ == '__main__':
     puller = DataPuller(sys.argv[1])
 
-    activity = puller.get_forum_activity()
-    threads = puller.get_forum_threads()
+    #activity = puller.get_forum_activity()
+    #threads = puller.get_forum_threads()
 
-    for forum, n_posts in sorted(activity.items(), key=lambda i: -i[1])[:100]:
-        color = 'green' if forum in puller.forum_to_users else 'red'
-        n_users_tot = len(puller.forum_to_users.get(forum, []))
-        n_users_dl = len([u for u in puller.forum_to_users.get(forum, []) if u in
-                          puller.user_to_forums])
-        n_threads_tot = len(puller.forum_threads[forum])
-        n_threads_dl = len(threads[forum])
-        tup = (n_posts, n_threads_tot, n_users_dl, n_users_tot, n_threads_dl)
-        print colored(forum, color),
-        print '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
+    #for forum, n_posts in sorted(activity.items(), key=lambda i: -i[1])[:100]:
+        #color = 'green' if forum in puller.forum_to_users else 'red'
+        #n_users_tot = len(puller.forum_to_users.get(forum, []))
+        #n_users_dl = len([u for u in puller.forum_to_users.get(forum, []) if u in
+                          #puller.user_to_forums])
+        #n_threads_tot = len(puller.forum_threads[forum])
+        #n_threads_dl = len(threads[forum])
+        #tup = (n_posts, n_threads_tot, n_users_dl, n_users_tot, n_threads_dl)
+        #print colored(forum, color),
+        #print '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
-    del activity, threads
+    #del activity, threads
 
     #puller.pull_all_forum_users()
-    puller.pull_all_user_forums(200)
+    #puller.pull_all_user_forums(200)
     #puller.pull_all_threads()
     #puller.pull_all_posts(n_threads=10)
     #puller.pull_forum_details()
