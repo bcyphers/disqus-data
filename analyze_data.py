@@ -29,9 +29,9 @@ from collect_data import *
 ## Misc ranking functions
 
 
-def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
-                      cutoff=1.5, src_cat=None, tar_cat=None, sources=None,
-                      targets=None):
+def build_link_matrix(data, dedup=True, M=None, N=500, square=False, norm=None,
+                      only_en=True, cutoff=1.5, weight_func='references',
+                      src_cats=None, tar_cats=None, sources=None, targets=None):
     """
     Convert the sparse representation that get_edges gives us into a dense
     (directed) transition matrix with normalized rows
@@ -45,10 +45,11 @@ def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
     norm ('l1', 'l2', None): how to normalize the rows in the matrix. This
         should be tweaked in the future and is probably important to
         understanding the whole thing
+    only_en (bool): if true, only allow english-language forums
     cutoff (float): if a forum's outgoing links/person average is below this,
         don't include them
-    src_cat (str): if provided, only use forums from this category as sources
-    tar_cat (str): if provided, only use this category as targets
+    src_cats (list[str]): if provided, only use forums from these categories as sources
+    tar_cats (list[str]): if provided, only use these categories as targets
     src_group (list[str]): if provided, this is the group of sources
     tar_group (list[str]): if provided, this is the group of targets
 
@@ -69,17 +70,24 @@ def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
     # get the edge graph from the data source. Includes everything we could need
     edges = data.get_forum_edges(dedup)
 
-    # TODO: is this the best way to go?
-    weights = data.get_forum_activity(dedup)
-    #weights = data.get_weights(dedup) # could also do this
-
     # build sources list if necessary
     if sources is None:
+        # TODO: is either one of these good enough?
+        if weight_func == 'activity':
+            weights = data.get_forum_activity(dedup)
+        elif weight_func == 'references':
+            weights = data.get_weights(dedup)
+        else:
+            raise ValueError(weight_func)
+
         # sort all possible sources by our weight metric
         all_sources = sorted(edges.keys(), key=lambda f: -weights[f])
-        if src_cat:
-            all_sources = [f for f in all_sources if
-                           data.forum_details[f]['category'] == category]
+
+        # cull sources that arent the right type
+        for f in all_sources[:]:
+            if only_en and data.forum_details[f]['language'] != 'en' or \
+                    src_cats and data.forum_details[f]['category'] not in src_cats:
+                all_sources.remove(f)
 
         # cull sources that don't meet our cutoff
         sources = []
@@ -110,7 +118,7 @@ def build_link_matrix(data, dedup=True, M=None, N=1000, square=False, norm=None,
                 for t, count in counts.iteritems():
                     # do category filtering if necessary
                     category = data.forum_details.get(t, {}).get('category', -1)
-                    if tar_cat is None or tar_cat == category:
+                    if tar_cats is None or category in tar_cats:
                         weights[t] += float(count) / len(forum_out_links(f))
 
             # take the top N most-mentioned targets

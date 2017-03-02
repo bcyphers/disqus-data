@@ -2,8 +2,9 @@ import pandas as pd
 import numpy as np
 from collect_data import *
 from analyze_data import *
+from topic_modeler import *
 
-def generate_details(data, df=None, path='www/forum-details.json'):
+def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
     """
     generate json document with details for each forum
 
@@ -12,7 +13,7 @@ def generate_details(data, df=None, path='www/forum-details.json'):
     """
     if df is None:
         print 'building link matrix...'
-        df = build_link_matrix(data)
+        df = build_link_matrix(data, **kwargs)
         print 'done'
 
     activity = data.get_forum_activity()
@@ -32,10 +33,14 @@ def generate_details(data, df=None, path='www/forum-details.json'):
         else:
             connectivity = 0
 
+        category = details['category']
+        if category == 'null' or category is None or category == '':
+            category = None
+
         out[f] = {
             'name': details['name'],
             'description': details['description'],
-            'category': details['category'],
+            'category': category,
             'url': details['url'],
             'connectivity': connectivity,
             'activity': act,
@@ -45,16 +50,29 @@ def generate_details(data, df=None, path='www/forum-details.json'):
         json.dump(out, f)
 
 
-def generate_topics(data, path='www/forum-details.json'):
-    pass
+def generate_topics(data, path='www/forum-topics.json', min_docs=5):
+    model = TopicModeler(data)
+    model.train(sample_size=2500)
+
+    # only send data on forums with enough documents
+    forums = [f for f, docs in model.docs.items() if len(docs) >= min_docs]
+    topics = model.predict_topics_forums(forums)
+
+    # send the relative incidence of each topic
+    rel_topics = topics.apply(lambda row: row / model.baseline_topics, axis=1)
+    rel_topics.transpose().to_json(path)
 
 
-def generate_correlations(data, path='www/forum-details.json'):
-    pass
+def generate_correlations(data, df=None, path='www/forum-correlations.json',
+                          **kwargs):
+    if df is None:
+        df = build_link_matrix(data, **kwargs)
+    cor_df = get_correlations(df)
+    cor_df.to_json(path)
 
 
-def generate_cluster_graph(data, df=None, path='www/d3-forums.json', categories=True,
-                           e=2, r=3, **kwargs):
+def generate_cluster_graph(data, df=None, path='www/d3-forums.json',
+                           categories=False, e=2, r=3, **kwargs):
     """
     generate a d3-parseable graph representation of the correlations between
     forums.
@@ -84,28 +102,30 @@ def generate_cluster_graph(data, df=None, path='www/d3-forums.json', categories=
             for forum in group:
                 rev_groups[forum] = k
 
-    # set up links between each pair of forums
-    for i, f1 in enumerate(cor.index):
+    # create node json for each forum
+    for f in cor.index:
         weights = data.get_forum_activity()
         for k in weights:
             weights[k] = max(np.log(weights[k] / float(10000)), 1) * 5
 
-        node = {'id': f1,
-                'group': rev_groups[f1],
-                'name': data.forum_details[f1]['name'],
-                'radius': weights[f1]}
-        nodes.append(node)
+        nodes.append({'id': f,
+                      'group': rev_groups[f],
+                      'name': data.forum_details[f]['name'],
+                      'radius': weights[f]})
 
+    # now, the tricky part: which links to include?
+    for i, f1 in enumerate(cor.index):
         f1_top_5 = sorted(cor[f1])[-5]
 
+        # iterate over all forums up to and excluding this one
         for f2 in cor.columns[:i]:
             f2_top_5 = sorted(cor[f2])[-5]
+
             # cull weak links
-            if cor[f2][f1] > 0.1 and (cor[f2][f1] >= f1_top_5 or
-                                      cor[f2][f1] >= f2_top_5):
+            if cor[f2][f1] > 0.9 or cor[f2][f1] > 0.5 and \
+                    (cor[f2][f1] >= f1_top_5 or cor[f2][f1] >= f2_top_5):
                 # ordering doesn't really matter here, the matrix is symmetrical
-                link = {'source': f1, 'target': f2, 'value': cor[f2][f1]}
-                links.append(link)
+                links.append({'source': f1, 'target': f2, 'value': cor[f2][f1]})
 
     out = {'nodes': nodes, 'links': links}
     with open(path, 'w') as f:

@@ -13,6 +13,11 @@
   stroke-width: 2.5px;
 }
 
+.nodes .circle-hilighted  {
+  stroke: #AAA;
+  stroke-width: 2.5px;
+}
+
 .nodes circle:hover  {
   stroke: #888;
   stroke-width: 2.5px;

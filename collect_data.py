@@ -1,4 +1,5 @@
 import csv
+import dateutil.parser
 import json
 import os
 import pdb
@@ -10,6 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from datetime import datetime
 from disqusapi import DisqusAPI, APIError, FormattingError
 from collections import defaultdict
 from numpy import linalg
@@ -83,11 +85,13 @@ class DataPuller(object):
         self.forum_to_users = load_json('forum_to_users', default={})
         self.all_users = load_json('all_users', default={})
         self.done_with = set(load_json('done_with', default=[]))
+        self.all_forum_threads = load_json('all_forum_threads', default={})
         self.forum_threads = load_json('forum_threads', default={})
         self.thread_posts = load_json('thread_posts', default={})
         self.forum_details = load_json('forum_details', default={})
 
         self.all_threads = {}
+        #for ts in self.all_forum_threads.values():
         for ts in self.forum_threads.values():
             self.all_threads.update({t: ts[t]['clean_title'] for t in ts})
 
@@ -98,6 +102,7 @@ class DataPuller(object):
         save_json(self.forum_to_users, 'forum_to_users')
         save_json(self.all_users, 'all_users')
         save_json(list(self.done_with), 'done_with')
+        save_json(self.all_forum_threads, 'all_forum_threads')
         save_json(self.forum_threads, 'forum_threads')
         save_json(self.thread_posts, 'thread_posts')
         save_json(self.forum_details, 'forum_details')
@@ -164,7 +169,7 @@ class DataPuller(object):
         a list of the forums they're most active in.
         """
         activity = self.get_forum_activity()
-        forums = sorted(self.get_all_forums(), key=lambda i: -activity[i])
+        forums = sorted(self.get_all_forums(), key=lambda i: -activity.get(i, 0))
 
         # loop over forums in order of most active
         for forum in forums:
@@ -229,6 +234,7 @@ class DataPuller(object):
 
 
     def pull_forum_details(self):
+        # first, get all forums that are part of our graph
         for f in self.forum_to_users.keys():
             if f not in self.forum_details:
                 print 'requesting data for forum', f
@@ -236,6 +242,17 @@ class DataPuller(object):
                 self.forum_details[f] = res
                 print 'saving forum data...'
                 save_json(self.forum_details, 'forum_details')
+
+        # start getting the rest
+        forums = sorted(self.get_weights().items(), key=lambda i: -i[1])
+        for f, w in forums:
+            if f not in self.forum_details:
+                print 'requesting data for forum', f
+                res = self.api.request('forums.details', forum=f)
+                self.forum_details[f] = res
+                print 'saving forum data...'
+                save_json(self.forum_details, 'forum_details')
+
 
     ###########################################################################
     ##  Threads and posts  ####################################################
@@ -295,26 +312,79 @@ class DataPuller(object):
         save_json(self.thread_posts, 'thread_posts')
 
     def pull_all_posts(self, n_threads=25):
-        threads = []
-        for ts in self.forum_threads.values():
-            # only first ten per forum for now
-            ts = sorted(ts.items(),
+        all_threads = []
+        for forum, threads in self.forum_threads.items():
+            if forum not in self.forum_details or \
+                    self.forum_details[forum]['language'] != 'en':
+                continue
+
+            # only first n_threads per forum
+            ts = sorted(threads.items(),
                         key=lambda i: -i[1]['postsInInterval'])[:n_threads]
-            threads.extend([t for i, t in ts if i not in self.thread_posts])
+            all_threads.extend([t for i, t in ts if i not in self.thread_posts])
 
         # do longest threads first
-        threads.sort(key=lambda t: -t['postsInInterval'])
+        all_threads.sort(key=lambda t: -t['postsInInterval'])
 
         # loop indefinitely, gathering data
-        for thread in threads:
+        for thread in all_threads:
             print 'pulling data for thread', repr(thread['clean_title']), \
                 'from forum', thread['forum']
             self.pull_thread_posts(thread['id'])
 
     def pull_forum_threads(self, forum):
-        print 'pulling most popular threads for forum', forum
-        assert forum not in self.forum_threads
+        # the first instant of President Trump's tenure
+        start_time = datetime(2017, 01, 20, 17, 0, 0)
+        end_time = datetime(2017, 02, 20, 17, 0, 0)
+        last_time = start_time
+        total_posts = 0
+        self.all_forum_threads[forum] = {}
 
+        print 'pulling all threads for forum', forum
+
+        # pull all threads in 30-day window
+        cursor = None
+        while last_time < end_time:
+            try:
+                if cursor is not None:
+                    res = self.api.request('forums.listThreads', forum=forum,
+                                           order='asc', limit=100,
+                                           since=start_time.isoformat(),
+                                           cursor=cursor)
+                else:
+                    res = self.api.request('forums.listThreads', forum=forum,
+                                           order='asc', limit=100,
+                                           since=start_time.isoformat())
+
+            except APIError as err:
+                print err
+                sys.exit(1)
+            except FormattingError as err:
+                print err
+                return
+
+            if not res.cursor['hasNext']:
+                break
+
+            cursor = res.cursor['next']
+            threads = [thread for thread in res if thread['posts'] > 0]
+            num_posts = sum(t['posts'] for t in threads)
+            total_posts += num_posts
+            last_time = dateutil.parser.parse(res[-1]['createdAt'])
+            self.all_forum_threads[forum].update({t['id']: t for t in threads})
+
+            print "pulled %d threads with %d posts, ending on %s" % \
+                (len(threads), num_posts, last_time)
+
+        print 'retrieved', len(self.all_forum_threads[forum].keys()), \
+            'threads with', total_posts, 'posts'
+
+        print 'saving thread data...'
+        save_json(self.all_forum_threads, 'all_forum_threads')
+
+    def pull_popular_forum_threads(forum):
+        print 'pulling top threads for forum', forum
+        # pull most popular threads
         try:
             res = self.api.request('threads.listPopular', forum=forum,
                                    interval='30d', limit=100)
@@ -325,25 +395,23 @@ class DataPuller(object):
             print err
             return
 
-        # count number of threads
-        num_posts = sum([t['postsInInterval'] for t in res])
         self.forum_threads[forum] = {t['id']: t for t in res}
-        print 'retrieved', len(res), 'threads with', num_posts, 'posts'
+        total_posts = sum(r['postsInInterval'] for r in res)
 
+        print 'retrieved', len(res), 'threads with', total_posts, 'posts'
         print 'saving thread data...'
         save_json(self.forum_threads, 'forum_threads')
 
     def pull_all_threads(self):
-        forums = self.get_weights()
-        for f in forums.keys():
-            if f in self.forum_threads:
-                del forums[f]
+        weights = self.get_weights()
+        activity = self.get_forum_activity()
+        forums = [(-w, f) for f, w in weights.items()
+                  if f not in self.all_forum_threads and
+                  activity.get(f, 0) >= 10000]
 
         # loop indefinitely, gathering data
-        while forums:
-            forum = sorted(forums.items(), key=lambda i: -i[1])[0][0]
+        for _, forum in sorted(forums):
             self.pull_forum_threads(forum)
-            del forums[forum]
 
     ###########################################################################
     ##  Utility functions and graph stuff  ####################################
@@ -400,9 +468,9 @@ class DataPuller(object):
 
     # map forums to recent activity
     def get_forum_activity(self, dedup=False):
-        counts = defaultdict(int)
+        counts = {}
         for f, threads in self.forum_threads.items():
-            counts[f] = sum([t['postsInInterval'] for t in threads.values()])
+            counts[f] = sum([t['posts'] for t in threads.values()])
 
         return counts
 
@@ -447,8 +515,10 @@ if __name__ == '__main__':
         print colored(forum, color),
         print '%d comments from %d threads, %d/%d active users, %d threads downloaded' % tup
 
-    puller.pull_all_forum_users()
-    #puller.pull_all_user_forums(100)
+    del activity, threads
+
+    #puller.pull_all_forum_users()
+    puller.pull_all_user_forums(200)
     #puller.pull_all_threads()
     #puller.pull_all_posts(n_threads=10)
     #puller.pull_forum_details()
