@@ -139,10 +139,11 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False, norm=None,
 
     # normalize the rows
     for f in df.index:
-        if norm is None:
-            num_users = len(forum_out_links(f))
-            df.ix[f] /= num_users
-        elif norm == 'l1':
+        num_users = len(forum_out_links(f))
+        df.ix[f] /= num_users
+
+        # l1 norm produces exact same correlation matrix
+        if norm == 'l1':
             df.ix[f] /= sum(df.ix[f])
         elif norm == 'l2':
             df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
@@ -173,7 +174,11 @@ def get_correlations(df):
     return pd.DataFrame(columns=df.index, index=df.index,
                         data=np.corrcoef(df.values.astype(float)))
 
-
+def top_correlations(cor, forum, n=10):
+    cor[forum][forum] = 0
+    top = cor[forum].sort_values(ascending=False)[:n]
+    for i, f in enumerate(top.index):
+        print '%d. %s: %.3f' % (i+1, f, cor[forum][f])
 
 def print_correlations(df):
     for i, arr in enumerate(np.corrcoef(df.values.astype(float))):

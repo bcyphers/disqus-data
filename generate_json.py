@@ -37,6 +37,9 @@ def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
         if category == 'null' or category is None or category == '':
             category = None
 
+        if category is None and f.startswith('channel-'):
+            category = 'Channel'
+
         out[f] = {
             'name': details['name'],
             'description': details['description'],
