@@ -45,7 +45,7 @@ def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
             'description': details['description'],
             'category': category,
             'url': details['url'],
-            'connectivity': connectivity,
+            'alexa': details.get('alexaRank', 0),
             'activity': act,
         }
 
@@ -53,9 +53,10 @@ def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
         json.dump(out, f)
 
 
-def generate_topics(data, path='www/forum-topics.json', min_docs=5):
-    model = TopicModeler(data)
-    model.train(sample_size=2500)
+def generate_topics(data, model=None, path='www/forum-topics.json', min_docs=5):
+    if model is None:
+        model = TopicModeler(data)
+        model.train(sample_size=2500)
 
     # only send data on forums with enough documents
     forums = [f for f, docs in model.docs.items() if len(docs) >= min_docs]
@@ -125,8 +126,9 @@ def generate_cluster_graph(data, df=None, path='www/d3-forums.json',
             f2_top_5 = sorted(cor[f2])[-5]
 
             # cull weak links
-            if cor[f2][f1] > 0.9 or cor[f2][f1] > 0.5 and \
-                    (cor[f2][f1] >= f1_top_5 or cor[f2][f1] >= f2_top_5):
+            # cor[f2][f1] > 0.9 or
+            if cor[f2][f1] > 0.25 and (cor[f2][f1] >= f1_top_5 or
+                                      cor[f2][f1] >= f2_top_5):
                 # ordering doesn't really matter here, the matrix is symmetrical
                 links.append({'source': f1, 'target': f2, 'value': cor[f2][f1]})
 

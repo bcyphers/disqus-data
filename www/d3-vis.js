@@ -11,8 +11,8 @@ function d3Simulate(path) {
           .strength(function(d) { return d.value; }))
       .force("charge", d3.forceManyBody())
       .force("center", d3.forceCenter(width / 2, height / 2))
-      //.force("collide", d3.forceCollide().radius(
-            //function(d) { return d.radius + 0.5; }).iterations(2))
+      .force("collide", d3.forceCollide().radius(
+            function(d) { return d.radius + 0.5; }).iterations(2))
       .force("y", d3.forceY(0).strength(0.05))
       .force("x", d3.forceX(0).strength(0.05));
 
@@ -120,4 +120,4 @@ function d3Simulate(path) {
 
 }
 
-d3Simulate("d3-forums-250.json");
+d3Simulate("d3-forums-3-12.json");

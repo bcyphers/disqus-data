@@ -410,6 +410,7 @@ class DataPuller(object):
         # pull first post in thread
         res = self.api.request('threads.listPosts', thread=thread,
                                order='asc', limit=1)
+
         self.thread_posts[thread] = [res[0]['id']]
         has_next = res.cursor['hasNext']
         cursor = res.cursor['next']
@@ -417,15 +418,8 @@ class DataPuller(object):
         all_data = []
 
         while has_next and num_posts < total_posts:
-            try:
-                res = self.api.request('threads.listPosts', thread=thread,
-                                       limit=100, cursor=cursor)
-            except APIError as err:
-                print err
-                return
-            except FormattingError as err:
-                print err
-                return
+            res = self.api.request('threads.listPosts', thread=thread,
+                                   limit=100, cursor=cursor)
 
             # have to go backwards here because we want them in chron order
             has_next = res.cursor['hasPrev']
@@ -465,16 +459,34 @@ class DataPuller(object):
             # only first n_threads per forum
             ts = sorted(threads.items(),
                         key=lambda i: -i[1]['postsInInterval'])[:n_threads]
-            all_threads.extend([t for i, t in ts if i not in self.thread_posts])
+            all_threads.extend([(forum, t) for i, t in ts if i not in self.thread_posts])
 
         # do longest threads first
-        all_threads.sort(key=lambda t: -t['postsInInterval'])
+        all_threads.sort(key=lambda t: -t[1]['postsInInterval'])
 
         # loop indefinitely, gathering data
-        for thread in all_threads:
+        for forum, thread in all_threads:
             print 'pulling data for thread', repr(thread['clean_title']), \
                 'from forum', thread['forum']
-            self.pull_thread_posts(thread['id'])
+            try:
+                self.pull_thread_posts(thread['id'])
+            except APIError as err:
+                print err
+                # API request limit: exit
+                if int(err.code) == 13:
+                    print 'exiting'
+                    break
+
+                # Invalid argument: remove thread
+                if int(err.code) == 2:
+                    print
+                    del self.active_forum_threads[forum][thread['id']]
+                    save_json(self.active_forum_threads, 'active_forum_threads')
+
+                print 'skipping thread', repr(thread['clean_title'])
+            except FormattingError as err:
+                print err
+                print 'skipping thread', repr(thread['clean_title'])
 
     def pull_forum_threads(self, forum):
         if forum not in self.all_forum_threads:
@@ -681,8 +693,8 @@ if __name__ == '__main__':
 
     #puller.pull_all_forum_users()
     #puller.pull_all_forum_activity()
-    puller.pull_all_user_forums(200)
+    #puller.pull_all_user_forums(200)
     #forums = [l.strip() for l in open(args[2])]
     #puller.pull_all_threads(forums)
-    #puller.pull_all_posts(n_threads=10)
+    puller.pull_all_posts(n_threads=50)
     #puller.pull_forum_details()

@@ -24,6 +24,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, \
 from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
 
+from collect_data import *
 
 class StemTokenizer(object):
     BLACKLIST = ['http', 'https', 'www', 'jpg', 'png', 'com', 'disquscdn',
@@ -86,7 +87,7 @@ class TopicModeler(object):
             print 'data for thread', tid, 'is no good'
             del self.data.thread_posts[tid]
             save_json(self.data.thread_posts, 'thread_posts')
-            return None
+            return ''
 
     def load_forum_thread(self, forum):
         return '\n'.join((self.load_thread(t) for t in self.docs[forum]))
@@ -199,7 +200,7 @@ class TopicModeler(object):
 
     def train(self, sample_size=1000):
         """
-        Train a topic model on the entire text corpus.
+        Train a topic modeler on the entire text corpus.
         """
         print 'building vectors...'
         vectors = self.vectorize(sample_size=sample_size)

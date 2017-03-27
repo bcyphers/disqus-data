@@ -18,15 +18,25 @@ $(document).ready(function(){
                     deets.url.substring(0, 38) + "..." : deets.url;
             }
 
+            var act_str, alexa_str;
+            if (deets.activity > 0)
+                act_str = Number(deets.activity).toLocaleString() + " posts";
+            else
+                act_str = "inactive";
+
+            if (deets.alexa > 0)
+                alexa_str = Number(deets.alexa).toLocaleString(); 
+            else
+                alexa_str = ">" + Number(1000000).toLocaleString();
+
             $("#forum-name").html(deets.name);
             $("#detail-url").html('<a href="' + deets.url + '">' + short_url + '</a>');
             $("#detail-category").html('Category: <a href="#">' + deets.category + "</a>");
             $("#detail-group").html('Grouped with: <a href="#">' +
                 details[group_id].name + "</a>");
-            $("#detail-activity").html("Activity (30d): <b>" +
-                deets.activity + " posts</b>");
-            $("#detail-connectivity").html("Connectivity: <b>" + 
-                Math.round(10 * deets.connectivity) / 10 + "</b>");
+            
+            $("#detail-activity").html("Activity (30d): <b>" + act_str + "</b>");
+            $("#detail-connectivity").html("Alexa rank: <b>" + alexa_str + "</b>");
 
             if (deets.description != null && 
                 deets.description != "None" && 
@@ -119,5 +129,24 @@ $(document).ready(function(){
         updateDescription(forumSelected);
         $(".circle-selected").removeClass("circle-selected");
         $("#" + e.target.id).addClass("circle-selected");
+    });
+
+    $("ul#coloring-select li").click(function(e) {
+        var nodes = d3.select("svg").selectAll("g circle");
+        var color = d3.scaleOrdinal(d3.schemeCategory20);
+        console.log("nodes selected: ", nodes.size());
+        key = e.target.value;
+        nodes.each(function(n) {
+            if (key == 'group')
+                n.attr("fill", color(n.group));
+            if (key == 'category')
+                n.attr("fill", color(details[n.id]['category']));
+            if (key == 'activity') {
+                if (details[n.id]['activity'] > 0)
+                    n.attr("fill", "red");
+                else
+                    n.attr("fill", "green");
+            }
+        });
     });
 });
