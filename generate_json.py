@@ -8,14 +8,9 @@ def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
     """
     generate json document with details for each forum
 
-    df (pd.DataFrame): if provided, don't build a new link matrix
+    data (DataPuller): data puller object that has all our data
     path (str): where to save the document
     """
-    if df is None:
-        print 'building link matrix...'
-        df = build_link_matrix(data, **kwargs)
-        print 'done'
-
     activity = data.get_forum_activity()
     forum_to_users = data.get_deduped_ftu()
 

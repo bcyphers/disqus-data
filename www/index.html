@@ -26,15 +26,15 @@ crossorigin="anonymous"></script>
     <svg width="1280" height="720" class="img-fluid" alt="Responsive image"></svg>
   </div>
   <div class="row">
-    <div class="col-3">
+    <div class="col-2">
       <div class="row">
         <div class="dropdown">
           <button class="btn btn-primary dropdown-toggle" type="button"
-  data-toggle="dropdown">Coloring<span class="caret"></span></button>
+  data-toggle="dropdown">Color by...<span class="caret"></span></button>
           <ul class="dropdown-menu" id='coloring-select'>
-            <li value='group'>Markov cluster</li>
-            <li value='category'>Category</li>
-            <li value='activity'>Activity</li>
+            <li><a href="#" value='category'>Categories</a></li>
+            <li><a href="#" value='group'>Markov clusters</a></li>
+            <li><a href="#" value='activity'>Activity</a></li>
           </ul>
         </div>
       </div>
@@ -55,7 +55,7 @@ crossorigin="anonymous"></script>
             <!--<li><a href="#">All</a></li>-->
           <!--</ul>-->
         <!--</div>-->
-      </div>
+      <!--</div>-->
     </div>
     <div class="col">
       <div class="row">
@@ -66,7 +66,7 @@ crossorigin="anonymous"></script>
           <ul class="list-group" id="details-ul">
             <li id="detail-url"></li>
             <li id="detail-category"></li>
-            <li id="detail-group"></li>
+            <li id="detail-cluster"></li>
             <li id="detail-activity"></li>
             <li id="detail-connectivity"></li>
             <li id="detail-description"></li>

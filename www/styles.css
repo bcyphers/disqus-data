@@ -3,24 +3,34 @@
   stroke-opacity: 0.6;
 }
 
+.links line.background  {
+  stroke-opacity: 0;
+}
+
 .nodes circle {
   stroke: #fff;
   stroke-width: 1.5px;
 }
 
-.nodes .circle-selected  {
-  stroke: #AAA;
-  stroke-width: 2.5px;
+.nodes circle.background  {
+  stroke: #fff;
+  opacity: 0.25;
 }
 
-.nodes .circle-hilighted  {
+.nodes circle.selected  {
   stroke: #AAA;
   stroke-width: 2.5px;
+  opacity: 1.0;
 }
 
 .nodes circle:hover  {
   stroke: #888;
   stroke-width: 2.5px;
+  opacity: 1.0;
+}
+
+.top-buffer { 
+  margin-top:20px; 
 }
 
 ol li {

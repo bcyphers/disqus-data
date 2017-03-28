@@ -2,6 +2,71 @@ var details = null;
 var correlations = null;
 var topics = null;
 var forumSelected = null;
+var subsetSelected = false;
+
+function clearSelection() {
+    subsetSelected = false;
+    $("circle.background").removeClass("background");
+    $("line.background").removeClass("background");
+}
+
+categorySelect = function(e) {
+    if (subsetSelected) {
+        clearSelection();
+        return;
+    }
+
+    subsetSelected = true;
+
+    // when a category name is clicked, hilight all nodes in the category
+    $(".nodes circle").addClass("background");
+    $(".links line").addClass("background");
+
+    var cat = details[forumSelected].category;
+    for (var f in details) {
+        if (details[f].category == cat) {
+            $("#node-" + f).removeClass("background");
+        }
+    }
+
+    var n1, n2;
+    $(".links line").each(function(i) {
+        n1 = $(this).attr("node1");
+        n2 = $(this).attr("node2");
+        if (details[n1].category == cat && details[n2].category == cat) {
+            $(this).removeClass("background");
+        }
+    });
+}
+
+clusterSelect = function(e) {
+    if (subsetSelected) {
+        clearSelection();
+        return;
+    }
+
+    subsetSelected = true;
+
+    // when a cluster name is clicked, hilight all nodes in the cluster
+    $(".nodes circle").addClass("background");
+    $(".links line").addClass("background");
+    var group = $("#node-" + forumSelected).attr("group");
+    for (var f in details) {
+        if ($("#node-" + f).attr("group") == group) {
+            $("#node-" + f).removeClass("background");
+        }
+    }
+
+    var n1, n2;
+    $(".links line").each(function(i) {
+        n1 = $(this).attr("node1");
+        n2 = $(this).attr("node2");
+        if ($("#node-" + n1).attr("group") == group && 
+            $("#node-" + n2).attr("group") == group) {
+            $(this).removeClass("background");
+        }
+    });
+}
 
 $(document).ready(function(){
     $.getJSON("forum-details.json", function(json){ details = json; });
@@ -22,18 +87,22 @@ $(document).ready(function(){
             if (deets.activity > 0)
                 act_str = Number(deets.activity).toLocaleString() + " posts";
             else
-                act_str = "inactive";
+                act_str = "None";
 
             if (deets.alexa > 0)
                 alexa_str = Number(deets.alexa).toLocaleString(); 
             else
-                alexa_str = ">" + Number(1000000).toLocaleString();
+                alexa_str = "Unavailable";
 
             $("#forum-name").html(deets.name);
             $("#detail-url").html('<a href="' + deets.url + '">' + short_url + '</a>');
-            $("#detail-category").html('Category: <a href="#">' + deets.category + "</a>");
-            $("#detail-group").html('Grouped with: <a href="#">' +
+            $("#detail-category").html('Category: <a id="category-select" href="#">' + 
+                    deets.category + "</a>");
+            $("#detail-cluster").html('Clusters with: <a id="cluster-select" href="#">' +
                 details[group_id].name + "</a>");
+
+            $("#category-select").click(categorySelect);
+            $("#cluster-select").click(clusterSelect);
             
             $("#detail-activity").html("Activity (30d): <b>" + act_str + "</b>");
             $("#detail-connectivity").html("Alexa rank: <b>" + alexa_str + "</b>");
@@ -127,25 +196,30 @@ $(document).ready(function(){
     $("circle").click(function(e) {
         forumSelected = e.target.id.replace("node-", "");
         updateDescription(forumSelected);
-        $(".circle-selected").removeClass("circle-selected");
-        $("#" + e.target.id).addClass("circle-selected");
+        clearSelection();
+        $("circle.selected").removeClass("selected");
+        $("#" + e.target.id).addClass("selected");
     });
 
-    $("ul#coloring-select li").click(function(e) {
+    $("ul#coloring-select li a").click(function(e) {
+        // when a selection is made from the "coloring" dropdown, recolor all 
+        // the nodes
         var nodes = d3.select("svg").selectAll("g circle");
         var color = d3.scaleOrdinal(d3.schemeCategory20);
-        console.log("nodes selected: ", nodes.size());
-        key = e.target.value;
-        nodes.each(function(n) {
-            if (key == 'group')
-                n.attr("fill", color(n.group));
-            if (key == 'category')
-                n.attr("fill", color(details[n.id]['category']));
-            if (key == 'activity') {
-                if (details[n.id]['activity'] > 0)
-                    n.attr("fill", "red");
-                else
+        key = e.target.getAttribute("value");
+
+        nodes.each(function(d, i) {
+            n = d3.select(this);
+            
+            if (key == "group")
+                n.attr("fill", color(d.group));
+            if (key == "category")
+                n.attr("fill", color(details[d.id].category));
+            if (key == "activity") {
+                if (details[d.id].activity > 0)
                     n.attr("fill", "green");
+                else
+                    n.attr("fill", "red");
             }
         });
     });
