@@ -4,7 +4,7 @@ from collect_data import *
 from analyze_data import *
 from topic_modeler import *
 
-def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
+def generate_details(data, df=None, path='www/data/forum-details.json', **kwargs):
     """
     generate json document with details for each forum
 
@@ -48,7 +48,7 @@ def generate_details(data, df=None, path='www/forum-details.json', **kwargs):
         json.dump(out, f)
 
 
-def generate_topics(data, model=None, path='www/forum-topics.json', min_docs=5):
+def generate_topics(data, model=None, path='www/data/forum-topics.json', min_docs=5):
     if model is None:
         model = TopicModeler(data)
         model.train(sample_size=2500)
@@ -62,15 +62,28 @@ def generate_topics(data, model=None, path='www/forum-topics.json', min_docs=5):
     rel_topics.transpose().to_json(path)
 
 
-def generate_correlations(data, df=None, path='www/forum-correlations.json',
-                          **kwargs):
+def generate_correlations(data, df=None, sortby=None,
+                          path='www/data/forum-correlations.json', **kwargs):
+    print 'building dataframe...'
     if df is None:
         df = build_link_matrix(data, **kwargs)
+
+    print 'building correlation matrix...'
+
+    # sort the forums in the matrix by some value from data.forum_details
+    if sortby is not None:
+        # for each forum in the index, get the det
+        column = [data.forum_details[f][sortby] for f in df.index]
+        key = '_' + sortby
+        df[key] = pd.Categorical(column)
+        df = df.sort_values(key)
+        del df[key]
+
     cor_df = get_correlations(df)
-    cor_df.to_json(path)
+    cor_df.to_json(path, orient='split')
 
 
-def generate_cluster_graph(data, df=None, path='www/d3-forums.json',
+def generate_cluster_graph(data, df=None, path='www/data/d3-forums.json',
                            categories=False, e=2, r=3, **kwargs):
     """
     generate a d3-parseable graph representation of the correlations between

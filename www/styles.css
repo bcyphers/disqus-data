@@ -1,3 +1,88 @@
+body {
+  margin: 0 auto;
+  padding: 4em 1em;
+  max-width: 50em;
+  line-height: 1.5;
+}
+
+h3 {
+  margin-top: 1em;
+  padding-top: 1em;
+}
+
+pre.sourceCode.python {
+  padding: 1em;
+  margin-bottom: 1em;
+  margin-left: 2em;
+  margin-right: 2em;
+  background-color: #f2f2f2;
+  border-radius: 5px;
+}
+
+/* table styling */
+table {
+  margin: 0 auto;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  color: black;
+}
+
+th td:nth-child(1) {
+  background-color: #f2f2f2;
+}
+
+td:nth-child(1) {
+  color: black;
+  font-weight: bold;
+}
+
+th, td {
+  padding: 5px;
+  text-align: center;
+}
+
+/* alternating row colors */
+tr:nth-child(even) {
+  background-color: #f2f2f2;
+}
+
+p.caption {
+  text-align: center;
+  font-style: italic;
+  padding-bottom: 1em;
+}
+
+/* Styling for the correlation matrix visual */
+
+div.matrix {
+  padding: 0 auto;
+  margin: 0 auto;
+}
+
+.matrix svg {
+  display: block;
+  margin: 0 auto;
+  margin-bottom: 1em;
+  overflow: visible;
+}
+
+.matrix line {
+  fill: none;
+  stroke-width: 1;
+}
+
+text#corrtext {
+  background-color: white;
+  border-radius: 2px;
+}
+
+/* Styling for the d3 visual */
+
 .links line {
   stroke: #999;
   stroke-opacity: 0.6;
@@ -31,6 +116,16 @@
 
 .top-buffer { 
   margin-top:20px; 
+}
+
+.info-header {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.info-container {
+  height: 15em;
+  overflow: auto;
 }
 
 ol li {

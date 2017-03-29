@@ -33,7 +33,7 @@ function getTransformation(transform) {
 
 
 function d3Simulate(path) {
-    var svg = d3.select("svg"),
+    var svg = d3.select("svg#force-directed"),
         width = +svg.attr("width"),
         height = +svg.attr("height");
 
@@ -167,4 +167,4 @@ function d3Simulate(path) {
 
 }
 
-d3Simulate("d3-forums-3-12.json");
+d3Simulate("data/d3-forums-3-12.json");

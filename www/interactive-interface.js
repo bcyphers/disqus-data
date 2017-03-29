@@ -4,16 +4,157 @@ var topics = null;
 var forumSelected = null;
 var subsetSelected = false;
 
+function updateDescription(forum) {
+    if (forum == null)
+        return false;
+
+    if (details != null) {
+        var deets = details[forum];
+        var group_id = $("#node-" + forum).attr("group");
+        var short_url = "";
+        if (deets.url != null) {
+            var short_url = deets.url.length > 33 ? 
+                deets.url.substring(0, 30) + "..." : deets.url;
+        }
+
+        var act_str, alexa_str;
+        if (deets.activity > 0)
+            act_str = Number(deets.activity).toLocaleString() + " posts";
+        else
+            act_str = "None";
+
+        if (deets.alexa > 0)
+            alexa_str = Number(deets.alexa).toLocaleString(); 
+        else
+            alexa_str = "Unavailable";
+
+        $("#forum-name").html(deets.name);
+        $("#detail-url").html('<a href="' + deets.url + '">' + short_url + '</a>');
+        $("#detail-category").html('Category: <a id="category-select" href="#">' + 
+                deets.category + "</a>");
+        $("#detail-cluster").html('Clusters with: <a id="cluster-select" href="#">' +
+            details[group_id].name + "</a>");
+
+        $("#category-select").click(categorySelect);
+        $("#cluster-select").click(clusterSelect);
+        
+        $("#detail-activity").html("Activity (30d): <b>" + act_str + "</b>");
+        $("#detail-connectivity").html("Alexa rank: <b>" + alexa_str + "</b>");
+
+        if (deets.description != null && 
+            deets.description != "None" && 
+            deets.description.length > 0) {
+            $("#detail-description").html("<i>" + deets.description.trim() + "</i>");
+        } else {
+            $("#detail-description").html("No description available.");
+        }
+    } else {
+        $("#forum-name").html(forum);
+    }
+
+    // update top 5 correlations for the selected forum
+    if (correlations != null) {
+        var forum_ix = correlations.index.indexOf(forum);
+        var cors = correlations.data[forum_ix];
+
+        // sort other forums by correlation
+        var list = [];
+        for (var i = 0; i < cors.length; i++) {
+            list.push([correlations.index[i], cors[i]]);
+        }
+        list.sort(function(first, second) { return second[1] - first[1]; });
+
+        // list top 5 correlations for this forum
+        var i = 0, j = 0;
+        while (j < 5) {
+            var cor_frm = list[i][0];
+            if (cor_frm == forum) {
+                i += 1;
+                continue;
+            }
+
+            if (details != null) { name = details[cor_frm].name; }
+            if (name.length >= 16) { name = name.substring(0, 15) + "..."; }
+
+            var cor_value = (Math.round(list[i][1] * 100) / 100).toFixed(2);
+
+            if (cor_value > 0) {
+                $("#correlation-" + j).html(cor_value + " " + 
+                        '<a href="#" forum="' + cor_frm + '">' + name + "</a>");
+            } else {
+                $("#correlation-" + j).html("");
+            }
+
+            i++;
+            j++;
+        }
+        
+        // onclick handler for the correlation list
+        $("#correlate-ol li a").click(function(e) {
+            e.preventDefault();
+            var forum = $(e.target).attr("forum");  
+            console.log(forum);
+            forumSelect(forum);
+            return false;
+        });
+    }
+
+    // list top 3 topics for this forum
+    if (topics != null) {
+        if (forum in topics) {
+            var tops = topics[forum];
+
+            // sort topics by score
+            var list = Object.keys(tops).map(function(key) { return [key, tops[key]]; });
+            list.sort(function(first, second) { return second[1] - first[1]; });
+
+            $("#topics-title").html("Top topics");
+            var i = 0;
+            while (i < 3) {
+                var name = list[i][0];
+                var num_dec = 2 - Math.floor(Math.log10(list[i][1]));
+                var value = list[i][1].toFixed(num_dec);
+
+                if (value > 1) {
+                    $("#topic-" + i + " .topic-score").html(value);
+                    $("#topic-" + i + " .topic-name").html(name);
+                } else {
+                    $("#topic-" + i + " .topic-score").html("");
+                    $("#topic-" + i + " .topic-name").html("");
+                }
+
+                i++;
+            }
+        } else {
+            $("#topics-title").html("No topic data available");
+            for (var i = 0; i < 5; i++) {
+                $("#topic-" + i + " .topic-score").html("");
+                $("#topic-" + i + " .topic-name").html("");
+            }
+        }
+    }
+}
+
 function clearSelection() {
     subsetSelected = false;
     $("circle.background").removeClass("background");
     $("line.background").removeClass("background");
 }
 
-categorySelect = function(e) {
+function forumSelect(forum) {
+    forumSelected = forum;
+    updateDescription(forumSelected);
+    clearSelection();
+    $("circle.selected").removeClass("selected");
+    $("#node-" + forum).addClass("selected");
+}
+
+function categorySelect(e) {
+    e.preventDefault();
+
     if (subsetSelected) {
         clearSelection();
-        return;
+        return false;
     }
 
     subsetSelected = true;
@@ -37,12 +178,15 @@ categorySelect = function(e) {
             $(this).removeClass("background");
         }
     });
+    return false;
 }
 
-clusterSelect = function(e) {
+function clusterSelect(e) {
+    e.preventDefault();
+
     if (subsetSelected) {
         clearSelection();
-        return;
+        return false;
     }
 
     subsetSelected = true;
@@ -66,142 +210,35 @@ clusterSelect = function(e) {
             $(this).removeClass("background");
         }
     });
+    return false;
 }
 
 $(document).ready(function(){
-    $.getJSON("forum-details.json", function(json){ details = json; });
-    $.getJSON("forum-correlations.json", function(json){ correlations = json; });
-    $.getJSON("forum-topics.json", function(json){ topics = json; });
-
-    function updateDescription(forum) {
-        if (details != null) {
-            var deets = details[forum];
-            var group_id = $("#node-" + forum).attr("group");
-            var short_url = "";
-            if (deets.url != null) {
-                var short_url = deets.url.length > 40 ? 
-                    deets.url.substring(0, 38) + "..." : deets.url;
-            }
-
-            var act_str, alexa_str;
-            if (deets.activity > 0)
-                act_str = Number(deets.activity).toLocaleString() + " posts";
-            else
-                act_str = "None";
-
-            if (deets.alexa > 0)
-                alexa_str = Number(deets.alexa).toLocaleString(); 
-            else
-                alexa_str = "Unavailable";
-
-            $("#forum-name").html(deets.name);
-            $("#detail-url").html('<a href="' + deets.url + '">' + short_url + '</a>');
-            $("#detail-category").html('Category: <a id="category-select" href="#">' + 
-                    deets.category + "</a>");
-            $("#detail-cluster").html('Clusters with: <a id="cluster-select" href="#">' +
-                details[group_id].name + "</a>");
-
-            $("#category-select").click(categorySelect);
-            $("#cluster-select").click(clusterSelect);
-            
-            $("#detail-activity").html("Activity (30d): <b>" + act_str + "</b>");
-            $("#detail-connectivity").html("Alexa rank: <b>" + alexa_str + "</b>");
-
-            if (deets.description != null && 
-                deets.description != "None" && 
-                deets.description.length > 0) {
-                $("#detail-description").html("<i>" + deets.description.trim() + "</i>");
-            } else {
-                $("#detail-description").html("No description available.");
-            }
-        } else {
-            $("#forum-name").html(forum);
-        }
-
-        if (correlations != null) {
-            var cors = correlations[forum];
-
-            // sort other forums by correlation
-            // javascript why are you like you are
-            var list = Object.keys(cors).map(function(key) { return [key, cors[key]]; });
-            list.sort(function(first, second) { return second[1] - first[1]; });
-
-            var i = 0, j = 0;
-            while (j < 5) {
-                var name = list[i][0];
-                if (name == forum) {
-                    i += 1;
-                    continue;
-                }
-
-                if (details != null) { name = details[name].name; }
-                if (name.length >= 16) { name = name.substring(0, 15) + "..."; }
-
-                var cor_value = (Math.round(list[i][1] * 100) / 100).toFixed(2);
-
-                if (cor_value > 0) {
-                    $("#correlation-" + j).html(cor_value + " " + name);
-                } else {
-                    $("#correlation-" + j).html("");
-                }
-
-                i++;
-                j++;
-            }
-        }
-
-        if (topics != null) {
-            if (forum in topics) {
-                var tops = topics[forum];
-
-                // sort other forums by correlation
-                // javascript why are you like you are
-                var list = Object.keys(tops).map(function(key) { return [key, tops[key]]; });
-                list.sort(function(first, second) { return second[1] - first[1]; });
-
-                $("#topics-title").html("Top topics");
-                var i = 0;
-                while (i < 5) {
-                    var name = list[i][0];
-                    var num_dec = 2 - Math.floor(Math.log10(list[i][1]));
-                    var value = list[i][1].toFixed(num_dec);
-
-                    if (value > 1) {
-                        $("#topic-" + i + " .topic-score").html(value);
-                        $("#topic-" + i + " .topic-name").html(name);
-                    } else {
-                        $("#topic-" + i + " .topic-score").html("");
-                        $("#topic-" + i + " .topic-name").html("");
-                    }
-
-                    i++;
-                }
-            } else {
-                $("#topics-title").html("No topic data available");
-                for (var i = 0; i < 5; i++) {
-                    $("#topic-" + i + " .topic-score").html("");
-                    $("#topic-" + i + " .topic-name").html("");
-                }
-            }
-        }
-    }
+    $.getJSON("data/forum-topics.json", function(json){ topics = json; });
+    $.getJSON("data/forum-correlations.json", function(json){ correlations = json; });
+    $.getJSON("data/forum-details.json", function(json){ 
+        details = json; 
+        // start with details for The Atlantic
+        forumSelect("theatlantic");
+    });
 
     $("circle").hover(function(e) {
-        forum = e.target.id.replace("node-", "");
+        var forum = e.target.id.replace("node-", "");
         updateDescription(forum);
     }, function(e) {
         updateDescription(forumSelected);
     });
 
     $("circle").click(function(e) {
-        forumSelected = e.target.id.replace("node-", "");
-        updateDescription(forumSelected);
-        clearSelection();
-        $("circle.selected").removeClass("selected");
-        $("#" + e.target.id).addClass("selected");
+        e.preventDefault();
+        var forum = e.target.id.replace("node-", "")   
+        forumSelect(forum);
+        return false;
     });
 
-    $("ul#coloring-select li a").click(function(e) {
+    $("#coloring-select li a").click(function(e) {
+        e.preventDefault();
+
         // when a selection is made from the "coloring" dropdown, recolor all 
         // the nodes
         var nodes = d3.select("svg").selectAll("g circle");
@@ -222,5 +259,6 @@ $(document).ready(function(){
                     n.attr("fill", "red");
             }
         });
+        return false;
     });
 });
