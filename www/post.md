@@ -21,22 +21,17 @@ Disqus is a comment service for websites. You've probably seen their ubiquitous 
 
 Recently, I got curious about how users from various parts of their network interact with each other. Luckily, they have a fantastic, free public API; it took me about 5 minutes to get a private key and start pulling down data. Here's what I did and what I found.
 
-### Getting Started
+### Getting started
 
-Most of my interactions with Disqus are via the Atlantic. I noticed that comments there represent a more diverse set of political views than comments on other mainstream, left-leaning sites, like the New York Times and the Washington Post. One difference is that the Times and the Post developed and deploy their own comment systems, while the Atlantic uses Disqus. One day, scanning a thread of fervently pro-Trump comments on an obviously Trump-critical piece, I wondered, where are these people coming from? Thanks to Disqus, I could find out. For example, a user who commented "White privilege is a racist canard" turned out to be quite active on The Federalist, a reliably conservative blog. And if I could check for one user, why not look at hundreds of them? If I could look at one site, why not look at them all?
+Most of my interactions with Disqus are via [The Atlantic](https://www.theatlantic.com/). At some point, I noticed that comments there represent a more diverse set of political views than comments on other mainstream, left-leaning sites, like the New York Times and the Washington Post. One day, scanning a thread of fervently pro-Trump comments on a piece obviously critical of 45, I wondered, where are these people coming from? Thanks to Disqus, I could find out. For example, a user who commented "White privilege is a racist canard" turned out to be quite active on The Federalist, a reliably conservative blog. And if I could check for one user, why not check hundreds of them? If I could look at one site, why not look at them all?
 
-*On privacy*: I was concerned with trends across sites, not with the habits of any individual user. I won't call out anyone by name (real or digital), and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web.  Nevertheless, I have downloaded several hundred megabytes of user data, which makes me kinda uneasy. Time and again, [research](https://arxiv.org/pdf/0903.3276.pdf) [has](http://hgi.ruhr-uni-bochum.de/media/emma/veroeffentlichungen/2011/06/07/deanonymizeSN-Oakland10.pdf) [shown](https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf) that an aggregate of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to [make their profiles private](https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private) in order to make it harder (though [not impossible](https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf)) for people like me to snoop.  
+<img src="./media/user-profile.png" alt="Disqus profile page" width="50%" class="centered">
+<p class="caption">A sample Disqus profile page</p>
 
-So, into the data. Most of the data gathered for this post are from the
-[`forum.listMostActiveUsers`](https://disqus.com/api/docs/forums/listMostActiveUsers/)
-and
-[`user.listMostActiveForums`](https://disqus.com/api/docs/users/listMostActiveForums/)
-endpoints. In Disqus jargon, a "forum" is more or less equivalent to a site,
-comments on one article are grouped in a "thread," and each comment is a "post."
-`forum.listMostActiveUsers` gives a list of a few hundred top users for a
-particular forum. For each of those, I called `user.listMostActiveForums`, which
-returns a list of the forums that a particular user frequents most. By doing so,
-I could generate a vector for each site showing which other sites its top users visited most. For example, here's the number of the Atlantic's top users (349) for whom each site is a "top forum":
+
+*A note on privacy*: I was interested in trends across Disqus forums, not with the habits of any individual user. In this post I won't call out anyone by name, real or digital, and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web.  Nevertheless, I have downloaded several hundred megabytes of user data, which makes me kinda uneasy. Time and again, [research](https://arxiv.org/pdf/0903.3276.pdf) [has](http://hgi.ruhr-uni-bochum.de/media/emma/veroeffentlichungen/2011/06/07/deanonymizeSN-Oakland10.pdf) [shown](https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf) that a collection of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to [make their profiles private](https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private) in order to make it harder (though [not impossible](https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf)) for people like me to snoop.  
+
+So, into the data. Most of the data gathered for this post are from the [`forum.listMostActiveUsers`](https://disqus.com/api/docs/forums/listMostActiveUsers/) and [`user.listMostActiveForums`](https://disqus.com/api/docs/users/listMostActiveForums/) endpoints. In Disqus jargon, a "forum" is more or less equivalent to a site, comments on one article are grouped in a "thread," and each comment is a "post." `listMostActiveUsers` gives a list of a few hundred top users for a particular forum. For each of those, I called `listMostActiveForums`, which returns a list of the forums that a particular user frequents most. By doing so, I could generate a vector for each site showing which other sites its top users visited most. For example, here's the number of the Atlantic's top users (349) for whom each site is a "top forum":
 
 ```python
 outgoing_links["The Atlantic"] = {
@@ -48,9 +43,9 @@ outgoing_links["The Atlantic"] = {
 }
 ```
 
-Several thousand forums are referenced in the full vector, most of them by just one user. 
+Several thousand forums are referenced in the full vector, most of them by just one user. The full dataset I've collected has vectors like this for 444 different forums.
 
-Now, let's build and normalize this vector for each forum, and compare how their users interact with other popular forums:
+If we normalize these vectors by the number of top users for each forum, we can compare how their users interact with other popular forums:
 
 |              | The Hill | Bloomberg View | InfoWars | National Review | Mother Jones |
 |--------------|----------|----------------|----------|-----------------|--------------|
@@ -59,13 +54,13 @@ Now, let's build and normalize this vector for each forum, and compare how their
 
 <p class="caption">What fraction of top users from forum A (vertical axis) frequent forum B (horizontal)?</p>
 
-Right off the bat, we have some interesting data. A bigger portion of The Atlantic's top users frequent the conservative stalwart National Review than do Breitbart's. Almost two-thirds of Breitbart's top users frequent Alex Jones' Infowars. And The Hill seems to be popular with everyone.
+Right off the bat, there's some interesting data. A bigger portion of The Atlantic's top users frequent the conservative stalwart [National Review](http://www.nationalreview.com/) than do Breitbart's. Almost two-thirds of Breitbart's top users frequent Alex Jones' [Infowars](https://www.infowars.com/). And [The Hill](http://thehill.com/) seems to be popular with everyone.
 
-That's cool, but it's tough to interpret. I found some forums' top users were very promiscuous: they would all frequent dozens of other sites. Other forums attracted an audience with more exclusive taste. And just because the top users of The Atlantic also visit Breitbart doesn't mean the inverse is true: Brietbart's top users might not touch that liberal rag. 
+That's neat, but it's tough to interpret. I found some forums' top users were rather promiscuous, and would all frequent dozens of other sites. Other forums attracted an audience with more exclusive taste. And just because the top users of The Atlantic also visit Breitbart doesn't mean the inverse is true; all of Brietbart's top users might stay away from that liberal rag. 
 
 ### Correlations
 
-It would be nice to get a straightforward measure of how similar two sites are. Let's try the [Pearson correlation coefficient](https://en.wikipedia.org/wiki/Pearson_correlation_coefficient) between each pair of forums. The cross-pollination vectors are very long, so correlation values should reflect, roughly, the similarity between the habits of each forum's top users. This makes another fun matrix:
+It would be nice to get a straightforward measure of how similar two sites are.  Let's try the [Pearson correlation coefficient](https://en.wikipedia.org/wiki/Pearson_correlation_coefficient) between each pair of forums. The cross-pollination vectors are very long, so correlation values should reflect, roughly, the similarity between the habits of each forum's top users. This makes another fun matrix:
 
 |              | The Atlantic | Breitbart | The Hill | The AV Club |
 |--------------|--------------|-----------|----------|-------------|
@@ -77,24 +72,20 @@ It would be nice to get a straightforward measure of how similar two sites are. 
 <p class="caption">Example correlations between user cross-pollination vectors
 on the top 500 most-referenced forums</p>
 
-Disqus forums are labeled with one of a few categories, like "News," "Sports,"
-and "Business." Most of the sites I pulled data for are news- or
-politics-related, and those tend to correlate highly with each other in spite of
-ideological differences. Forums from under-represented categories, like
-Entertainment and Technology, correlate less strongly with anything (but more
-strongly with forums in their own category). It seems like the numbers are more
-meaningful when compared against a specific forum than they are globally. *The
-Atlantic* correlates with *Breitbart* (0.57), but 154 other forums correlate with
-*Breitbart* more strongly; likewise, 167 forums are more correlated with *The
-Atlantic*. Meanwhile, the top correlation with *The AV Club* is *Tom and Lorenzo* at 0.57.
+Cool! That... kind of makes sense. As a news site, The Atlantic is similar to both Breitbart and The Hill, but probably more similar to The Hill. And [The AV Club](http://avclub.com/) is not that similar to any of them, but its left-leaning audience is probably most similar to The Atlantic's.
 
+Disqus forums are labeled with one of a few categories, like "News," "Sports," and "Business." Most of the sites I pulled data for are news- or politics-related, and those tend to correlate highly with each other in spite of ideological differences. Forums from under-represented categories, like Entertainment and Technology, correlate less strongly with anything (but more strongly with forums in their own category). It might be worthwile to generate correlation matrices on samples weighted by category. 
 
-Here's a broader view of the correlations between the top 100 most referenced sites:
+The numbers are more meaningful when compared against a specific forum than they are globally. The Atlantic correlates with Breitbart (0.57), but 154 other forums correlate with Breitbart more strongly; likewise, 167 forums are more correlated with The Atlantic. Meanwhile, the top correlation with The AV Club is [Tom and Lorenzo](http://tomandlorenzo.com/) at 0.58.
+
+Here's a broader view of the correlations between the 100 most referenced forums:
 
 <div class="matrix"></div>
 <script type="text/javascript" src="corr_matrix.js"></script>
 
-<p class="caption">Correlation matrix between top 100 referenced sites</p>
+<p class="caption">Correlation matrix adapted from Karl Broman's [example](https://github.com/kbroman/d3examples/tree/master/corr_w_scatter)</p>
+
+The forums here are sorted by category, with Disqus Channels at the top left and News in the bottom-right quadrant.
 
 ### Clustering
 
@@ -116,8 +107,8 @@ A correlation matrix looks an awful lot like a fully-connected graph, and graphs
           <button class="btn btn-primary dropdown-toggle" type="button"
   data-toggle="dropdown">Color by...<span class="caret"></span></button>
           <ul class="dropdown-menu" id='coloring-select'>
-            <li><a href="#" value='category'>Categories</a></li>
-            <li><a href="#" value='group'>Markov clusters</a></li>
+            <li><a href="#" value='category'>Category</a></li>
+            <li><a href="#" value='group'>MCL (e=2, r=3)</a></li>
             <li><a href="#" value='activity'>Activity</a></li>
           </ul>
         </div>
@@ -171,40 +162,35 @@ Each circle is a forum, and links are correlations. In this graph, I only includ
 
 Markov Clustering (MCL) is one way to group the forums algorithmically. You can read about it [here](http://micans.org/mcl/), it's fascinating. Basically, you provide a graph with edge weights, and the algorithm manipulates the graph so that each vertex "clusters" around a single other vertex -- possibly itself. There are two parameters, e and r, which control how large the clusters are. You can see the results of the clustering by selecting "Markov clusters" under "Color by..."
 
-What's striking about the graph is how tight some of the regions are. Again, the
-"News" sites tend to cluster together in the middle, but that's not the whole
-story. If you scan that big region in the middle, you'll notice a lot of
-"Culture," "Business," and some "Entertainment" as well. And check out the
-region around Breitbart (one of the biggest circles, to the left of the graph).
-There are dozens of sites that correlate quite strongly with each other --
-the conservative blogosphere. 
+What's striking about the graph is how tight some of the regions are. Again, the "News" sites tend to cluster together in the middle, but that's not the whole story. If you scan that big region in the middle, you'll notice a lot of "Culture," "Business," and some "Entertainment" as well. And check out the region around Breitbart (one of the biggest circles, to the left of the graph).  There are dozens of sites that correlate quite strongly with each other -- the conservative blogosphere. 
 
-Turn on Markov coloring. You can click on the "Clusters with" link under forum
-details to hilight a cluster in the graph. Breitbart & co. are mostly in blue,
-though the green group is closely related. Liberal blogs have their own clusters
--- Media Matters, Wonkette, and Raw Story form the core of a tan group towards
-the bottom. The orange group includes a lot of the "old guard:" The Atlantic,
-Rolling Stone, and CBS local affiliates, plus, for some reason, The AV Club and
-a whole bunch of entertainment sites. 
+Turn on Markov coloring. You can click on the "Clusters with" link under forum details to hilight a cluster in the graph. Breitbart & co. are mostly in blue, though the green group is closely related. Liberal blogs have their own clusters -- [Media Matters](https://mediamatters.org/), [Wonkette](https://wonkette.com/), and [Raw Story](http://www.rawstory.com/) form the core of a tan group towards the bottom. The orange group includes a lot of the "old guard:" The Atlantic, Rolling Stone, and CBS local affiliates, plus, for some reason, The AV Club and a whole bunch of entertainment sites. 
 
-Look at the top correlations for blue sites. Most of them have more than one
-correlation above .9; Breitbart has five.  The green group is even more
-tight-knit. Due to the way I added links (a maximum of five per forum), a
-portion of the green group cut itself off from the rest of the network by being
-*too* connected. You should see it floating off to the right. TotalConservative,
-UnfilteredPatriot, PatriotNewsDaily: all these forums have r-values of .99
-with each other. They also correlate with blue-group forums quite well, but
-don't get a chance to link to them because of link limits. The only other
-cliques in the graph this tight involve sub-forums of the same site, e.g. CBS
-local stations or Disqus channels.
+Look at the top correlations for blue sites. Most of them have more than one correlation above .9; Breitbart has five.  The green group is even more tight-knit. Due to the way I added links (a maximum of five per forum), a portion of the green group cuts itself off from the rest of the network by being *too* connected. You should see it floating off to the right. [TotalConservative](http://totalconservative.com/), [UnfilteredPatriot](http://unfilteredpatriot.com/), [PatriotNewsDaily](http://patriotnewsdaily.com/): all these forums have r-values of .99 with each other. They also correlate with blue-group forums quite well, but don't get a chance to link to them because of link limits. The only other cliques in the graph this tight involve sub-forums of the same site, e.g. CBS local stations or Disqus channels.
 
-<p class="caption">[PCA](https://en.wikipedia.org/wiki/Principal_component_analysis) plot of correlation vectors</p>
+### Activity
 
-#### Fifty thousand people used to post here. Now it's a ghost town.
+Another interesting metric is the number of comments (posts) each forum is actually getting. To estimate, I summed up the number of posts in the top 100 threads for each forum during a 30-day period. By far, the three most active sites are Breitbart, [World Star](http://www.worldstarhiphop.com/videos/), and The Hill -- it's not even close. Each of those forums averages over 7,000 posts per thread on their most popular articles. Due to the way the API is set up, it's tough (several hours per forum) to estimate the *total* number of posts a forum gets in the same period. Out of curiosity, I did pull all the data for Breitbart, and found just over 3 million posts between January 20 and February 20. To put that in perspective, Disqus claims to serve 50 million comments per month. That would mean Breitbart *alone* accounts for over 6% of their traffic.
 
-Let me direct your attention to another trend. Color the graph by "activity," and check out the forums that don't have any recent posts. Any of them sound familiar? CNN, NBC, Bloomberg, Politico... that's not a glitch. Dozens of sites have shut down their Disqus forums in the past couple of years, and a good chunk of them are "mainstream." 
+Something else stuck out to me. Try coloring the graph by "activity," and check out the forums that don't have any recent posts. Any of them sound familiar? CNN, NBC, Bloomberg, Politico... that's not a glitch. Dozens of sites have shut down their Disqus forums in the past couple of years, and a good chunk of them are "mainstream." 
 
-Some of them, like Politico and The National Review, have switched over to Facebook-powered comment machinery. Others, like CNN and Bloomberg, appear to have ditched comments altogether. It's possible this is related to hate speech issues Disqus has had in the past (and have recently [tried to address](https://blog.disqus.com/our-commitment-to-fighting-hate-speech)), or maybe it's part of [the Left's war on comments](http://www.breitbart.com/tech/2015/10/27/the-lefts-war-on-comment-sections/)... I haven't delved deeper, but it's interesting either way.
+<img src="./media/cnn-empty.png" alt="CNN forum page" class="centered">
+<p class="caption">Fifty thousand people used to post here. Now it's a ghost town.</p>
 
+Some of them, like Politico and The National Review, have switched over to Facebook-powered comment machinery. Others, like CNN and Bloomberg, appear to have ditched comments altogether. It's possible this is related to hate speech issues Disqus has had in the past (and has recently [tried to address](https://blog.disqus.com/our-commitment-to-fighting-hate-speech)), or maybe it's part of [the Left's war on comments](http://www.breitbart.com/tech/2015/10/27/the-lefts-war-on-comment-sections/)... I haven't delved deeper, but it's interesting either way.
 
-### d
+I hope to have more details about forum activity in the next installment.
+
+### Topics
+
+Finally, you'll notice a "top topics" section under the force graph. For each forum with enough activity, I pulled down raw text from the forum's most active threads. Treating each thread like a document, I ran topic modeling on the set of all threads. The topics you see for each forum are the most common from all that forum's threads. The score next to each topic is how *much* more common the topic is in that forum than the entire corpus. The details are beyond the scope of this post, but all the code is on [github](https://github.com/bcyphers/disqus-data).
+
+Take all of this with a block of salt: I'm very new to NLP, and may have made some grave statistical errors along the way. Please don't use any of this data as "evidence" to support anything consequential.
+
+With that said, there's some really interesting stuff. World Star commenters talk about race much more than average, and music isn't even in the top 3. Other sites correlated with World Star have a similar pattern. Android Authority, predictably, talks about "phone google data" much more than normal, but also about "china south war north military." At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about whites, blacks, racism, Milo, and Israel. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "california state illegals states union."
+
+Looking at topics on news sites also let us guage the important news cycles for the sample time period -- the first 30 days of Trump's presidency. Across the ideological spectrum, "milo breitbart sexual speech defend" was a trending topic, as was "news media cnn press fox" and "trump president obama donald hillary." Left-leaning sites tended to talk more about "flynn administration russian russia trump" than right-leaning ones. A topic about "soros george america money paid" was present almost exclusively on conservative forums.
+
+### Next Steps
+
+There's a lot more that could be done with this data, but for the sake of brevity and time I'm ending here. I'm still actively downloading raw post text and pulling users for new forums. Next time, I'll delve more into the content of the comments sections of each forum. I've got a slew of NLP-related ideas that I'll try to tackle in a coherent way. If you have any questions, corrections or suggestions, please let me know! [bcyphers@mit.edu](mailto:bcyphers@mit.edu)

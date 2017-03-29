@@ -31,7 +31,7 @@ d3.json("data/forum-correlations-small.json", function(data) {
 
   var corYscale = d3.scaleBand()
     .domain(d3.range(nvar))
-    .rangeRound([h, 0]);
+    .rangeRound([0, h]);
 
   var corZscale = d3.scaleLinear()
     .domain([-1, 0, 1])
@@ -57,8 +57,8 @@ d3.json("data/forum-correlations-small.json", function(data) {
     }
     
     var getTextY = function() {
-      var mult = 1;
-      if (d.row < nvar / 2) { mult = -1; }
+      var mult = -1;
+      if (d.row < nvar / 2) { mult = 1; }
       return corYscale(d.row) + (mult + 0.35) * 20;
     }
 
@@ -130,11 +130,12 @@ d3.json("data/forum-correlations-small.json", function(data) {
       .on("mouseout",  mouseOut)
       .on("click", function(d) { return drawScatter(d.col, d.row); });
 
-  corrplot.append("rect")
-    .attr("height", h)
-    .attr("width", w)
-    .attr("fill", "none")
-    .attr("stroke", "black")
-    .attr("stroke-width", 1)
-    .attr("pointer-events", "none");
+  // draw the black outline
+  //corrplot.append("rect")
+    //.attr("height", h)
+    //.attr("width", w)
+    //.attr("fill", "none")
+    //.attr("stroke", "black")
+    //.attr("stroke-width", 1)
+    //.attr("pointer-events", "none");
 });
