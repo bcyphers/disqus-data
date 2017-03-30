@@ -32,7 +32,7 @@ function getTransformation(transform) {
 }
 
 
-function d3FDGSimulate(path) {
+function forceGraphSimulate(path, callback) {
     var svg = d3.select("svg#force-directed"),
         width = +svg.attr("width"),
         height = +svg.attr("height");
@@ -52,16 +52,6 @@ function d3FDGSimulate(path) {
   
     var maxRadius = 50,
         padding = 6;
-
-    //var aspect = width / height,
-        //chart = d3.select('#chart');
-
-    //d3.select(window)
-      //.on("resize", function() {
-        //var targetWidth = chart.node().getBoundingClientRect().width;
-        //chart.attr("width", targetWidth);
-        //chart.attr("height", targetWidth / aspect);
-      //});
 
     d3.json(path, function(error, graph) {
         if (error) throw error;
@@ -84,9 +74,9 @@ function d3FDGSimulate(path) {
             .attr("fill", "f2f2f2")
             .attr("id", function(d) { return "node-" + d.id; })
             .call(d3.drag()
-                .on("start", dragstarted)
+                .on("start", dragStarted)
                 .on("drag", dragged)
-                .on("end", dragended));
+                .on("end", dragEnded));
 
         node.append("title")
             .text(function(d) { return d.name; })
@@ -103,10 +93,10 @@ function d3FDGSimulate(path) {
             .translateExtent([[-width, -height], [width * 3, height * 3]])
             .on("zoom", zoomed);
 
-        d3.select("button")
-            .on("click", resetted);
-
         svg.call(zoom);
+
+        // hook up event handlers after everything else is done
+        callback();
 
         function ticked() {
             link
@@ -116,31 +106,25 @@ function d3FDGSimulate(path) {
                 .attr("y2", function(d) { return d.target.y; });
 
             node
-                .attr("cx", function(d) { return d.x; }) // = Math.max(d.radius, Math.min(width - d.radius, d.x)); })
-                .attr("cy", function(d) { return d.y; }); //= Math.max(d.radius, Math.min(height - d.radius, d.y)); });
+                .attr("cx", function(d) { return d.x; })
+                .attr("cy", function(d) { return d.y; });
         }
 
         function zoomed() {
             link.attr("transform", d3.event.transform);
             node.attr("transform", d3.event.transform);
         }
-
-        function resetted() {
-            svg.transition()
-                .duration(750)
-                .call(zoom.transform, d3.zoomIdentity);
-        }
     });
 
-    function dragstarted(d) {
+    function dragStarted(d) {
         if (!d3.event.active) 
             simulation.alphaTarget(0.3).restart();
         d3.event.sourceEvent.stopPropagation();
         d3.select(this).classed("dragging", true);
         d.fx = d.x;
         d.fy = d.y;
-        d.last_x = d.x;
-        d.last_y = d.y;
+        d.lastX = d.x;
+        d.lastY = d.y;
     }
 
     function dragged(d) {
@@ -149,21 +133,19 @@ function d3FDGSimulate(path) {
                 .selectAll("circle")
                 .attr("transform"));
 
-        del_x = (d3.event.x - d.last_x) / transform.scaleX;
-        del_y = (d3.event.y - d.last_y) / transform.scaleY;
-        d.fx = d.last_x + del_x;
-        d.fy = d.last_y + del_y;
+        del_x = (d3.event.x - d.lastX) / transform.scaleX;
+        del_y = (d3.event.y - d.lastY) / transform.scaleY;
+        d.fx = d.lastX + del_x;
+        d.fy = d.lastY + del_y;
 
         d3.select(this).attr("cx", d.fx).attr("cy", d.fy);
     }
 
-    function dragended(d) {
+    function dragEnded(d) {
         d3.select(this).classed("dragging", false);
-        if (!d3.event.active) simulation.alphaTarget(0);
+        if (!d3.event.active) 
+            simulation.alphaTarget(0);
         d.fx = null;
         d.fy = null;
     }
-
 }
-
-d3FDGSimulate("data/d3-forums-3-12.json");

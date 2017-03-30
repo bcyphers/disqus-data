@@ -5,9 +5,6 @@ var forumSelected = null;
 var subsetSelected = false;
 
 function updateDescription(forum) {
-    if (forum == null)
-        return false;
-
     if (details != null) {
         var deets = details[forum];
         var short_url = "";
@@ -185,7 +182,6 @@ function recolorCircles(key) {
     // the nodes
     var nodes = d3.select("svg#force-directed").selectAll("g circle");
     var color = d3.scaleOrdinal(d3.schemeCategory20);
-    console.log("recoloring...");
 
     nodes.each(function(d, i) {
         n = d3.select(this);
@@ -236,31 +232,47 @@ function clusterSelect(e) {
 }
 
 $(document).ready(function(){
+    var d3Ready = false,
+        detailsReady = false;
+
     $.getJSON("data/forum-topics.json", function(json){ topics = json; });
     $.getJSON("data/forum-correlations.json", function(json){ correlations = json; });
     $.getJSON("data/forum-details.json", function(json){ 
         details = json; 
-        recolorCircles("category");
-        forumSelect("theatlantic");
+        detailsReady = true;
+        finalSetup();
     });
+    forceGraphSimulate("data/d3-forums-3-12.json", d3Callback);
 
-    $(".nodes circle").hover(function(e) {
-        var forum = e.target.id.replace("node-", "");
-        updateDescription(forum);
-    }, function(e) {
-        updateDescription(forumSelected);
-    });
+    function finalSetup() {
+        if (detailsReady && d3Ready) {
+            recolorCircles("category");
+            forumSelect("theatlantic");
+        }
+    }
 
-    $(".nodes circle").click(function(e) {
-        e.preventDefault();
-        var forum = e.target.id.replace("node-", "")   
-        forumSelect(forum);
-        return false;
-    });
+    function d3Callback() {
+        $(".nodes circle").hover(function(e) {
+            var forum = e.target.id.replace("node-", "");
+            updateDescription(forum);
+        }, function(e) {
+            updateDescription(forumSelected);
+        });
 
-    $("#coloring-select li a").click(function(e) {
-        e.preventDefault();
-        recolorCircles(e.target.getAttribute("value"));
-        return false;
-    });
+        $(".nodes circle").click(function(e) {
+            e.preventDefault();
+            var forum = e.target.id.replace("node-", "")   
+            forumSelect(forum);
+            return false;
+        });
+
+        $("#coloring-select li a").click(function(e) {
+            e.preventDefault();
+            recolorCircles(e.target.getAttribute("value"));
+            return false;
+        });
+
+        d3Ready = true;
+        finalSetup();
+    }
 });

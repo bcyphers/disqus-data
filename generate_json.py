@@ -119,16 +119,6 @@ def generate_cluster_graph(data, df=None, path='www/data/d3-forums.json',
     nodes = []
     links = []
 
-    # set up mapping from forum to group
-    if categories:
-        rev_groups = {f: data.forum_details[f]['category'] for f in cor.index}
-    else:
-        groups = do_mcl(cor, e, r)
-        rev_groups = {}
-        for i, (k, group) in enumerate(groups.items()):
-            for forum in group:
-                rev_groups[forum] = k
-
     # create node json for each forum
     for f in cor.index:
         weights = data.get_forum_activity()
@@ -136,7 +126,6 @@ def generate_cluster_graph(data, df=None, path='www/data/d3-forums.json',
             weights[k] = max(np.log(weights[k] / float(10000)), 1) * 5
 
         nodes.append({'id': f,
-                      'group': rev_groups[f],
                       'name': data.forum_details[f]['name'],
                       'radius': weights[f]})
 
