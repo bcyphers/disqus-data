@@ -10,7 +10,6 @@ function updateDescription(forum) {
 
     if (details != null) {
         var deets = details[forum];
-        var group_id = $("#node-" + forum).attr("group");
         var short_url = "";
         if (deets.url != null) {
             var short_url = deets.url.length > 33 ? 
@@ -33,7 +32,7 @@ function updateDescription(forum) {
         $("#detail-category").html('Category: <a id="category-select" href="#">' + 
                 deets.category + "</a>");
         $("#detail-cluster").html('Clusters with: <a id="cluster-select" href="#">' +
-            details[group_id].name + "</a>");
+            details[deets.group].name + "</a>");
 
         $("#category-select").click(categorySelect);
         $("#cluster-select").click(clusterSelect);
@@ -181,6 +180,29 @@ function categorySelect(e) {
     return false;
 }
 
+function recolorCircles(key) {
+    // when a selection is made from the "coloring" dropdown, recolor all 
+    // the nodes
+    var nodes = d3.select("svg#force-directed").selectAll("g circle");
+    var color = d3.scaleOrdinal(d3.schemeCategory20);
+    console.log("recoloring...");
+
+    nodes.each(function(d, i) {
+        n = d3.select(this);
+        
+        if (key == "group")
+            n.attr("fill", color(details[d.id].group));
+        if (key == "category")
+            n.attr("fill", color(details[d.id].category));
+        if (key == "activity") {
+            if (details[d.id].activity > 0)
+                n.attr("fill", "green");
+            else
+                n.attr("fill", "red");
+        }
+    });
+}
+
 function clusterSelect(e) {
     e.preventDefault();
 
@@ -194,9 +216,9 @@ function clusterSelect(e) {
     // when a cluster name is clicked, hilight all nodes in the cluster
     $(".nodes circle").addClass("background");
     $(".links line").addClass("background");
-    var group = $("#node-" + forumSelected).attr("group");
+    var group = details[forumSelected].group;
     for (var f in details) {
-        if ($("#node-" + f).attr("group") == group) {
+        if (details[f].group == group) {
             $("#node-" + f).removeClass("background");
         }
     }
@@ -205,8 +227,8 @@ function clusterSelect(e) {
     $(".links line").each(function(i) {
         n1 = $(this).attr("node1");
         n2 = $(this).attr("node2");
-        if ($("#node-" + n1).attr("group") == group && 
-            $("#node-" + n2).attr("group") == group) {
+        if (details[n1].group == group && 
+            details[n2].group == group) {
             $(this).removeClass("background");
         }
     });
@@ -218,18 +240,18 @@ $(document).ready(function(){
     $.getJSON("data/forum-correlations.json", function(json){ correlations = json; });
     $.getJSON("data/forum-details.json", function(json){ 
         details = json; 
-        // start with details for The Atlantic
+        recolorCircles("category");
         forumSelect("theatlantic");
     });
 
-    $("circle").hover(function(e) {
+    $(".nodes circle").hover(function(e) {
         var forum = e.target.id.replace("node-", "");
         updateDescription(forum);
     }, function(e) {
         updateDescription(forumSelected);
     });
 
-    $("circle").click(function(e) {
+    $(".nodes circle").click(function(e) {
         e.preventDefault();
         var forum = e.target.id.replace("node-", "")   
         forumSelect(forum);
@@ -238,27 +260,7 @@ $(document).ready(function(){
 
     $("#coloring-select li a").click(function(e) {
         e.preventDefault();
-
-        // when a selection is made from the "coloring" dropdown, recolor all 
-        // the nodes
-        var nodes = d3.select("svg").selectAll("g circle");
-        var color = d3.scaleOrdinal(d3.schemeCategory20);
-        key = e.target.getAttribute("value");
-
-        nodes.each(function(d, i) {
-            n = d3.select(this);
-            
-            if (key == "group")
-                n.attr("fill", color(d.group));
-            if (key == "category")
-                n.attr("fill", color(details[d.id].category));
-            if (key == "activity") {
-                if (details[d.id].activity > 0)
-                    n.attr("fill", "green");
-                else
-                    n.attr("fill", "red");
-            }
-        });
+        recolorCircles(e.target.getAttribute("value"));
         return false;
     });
 });

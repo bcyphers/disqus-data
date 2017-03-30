@@ -32,7 +32,7 @@ function getTransformation(transform) {
 }
 
 
-function d3Simulate(path) {
+function d3FDGSimulate(path) {
     var svg = d3.select("svg#force-directed"),
         width = +svg.attr("width"),
         height = +svg.attr("height");
@@ -53,15 +53,15 @@ function d3Simulate(path) {
     var maxRadius = 50,
         padding = 6;
 
-    var aspect = width / height,
-        chart = d3.select('#chart');
+    //var aspect = width / height,
+        //chart = d3.select('#chart');
 
-    d3.select(window)
-      .on("resize", function() {
-        var targetWidth = chart.node().getBoundingClientRect().width;
-        chart.attr("width", targetWidth);
-        chart.attr("height", targetWidth / aspect);
-      });
+    //d3.select(window)
+      //.on("resize", function() {
+        //var targetWidth = chart.node().getBoundingClientRect().width;
+        //chart.attr("width", targetWidth);
+        //chart.attr("height", targetWidth / aspect);
+      //});
 
     d3.json(path, function(error, graph) {
         if (error) throw error;
@@ -81,8 +81,7 @@ function d3Simulate(path) {
           .data(graph.nodes)
           .enter().append("circle")
             .attr("r", function(d) { return d.radius; })
-            .attr("fill", function(d) { return color(details[d.id].category); })
-            .attr("group", function(d) { return d.group; })
+            .attr("fill", "f2f2f2")
             .attr("id", function(d) { return "node-" + d.id; })
             .call(d3.drag()
                 .on("start", dragstarted)
@@ -167,4 +166,4 @@ function d3Simulate(path) {
 
 }
 
-d3Simulate("data/d3-forums-3-12.json");
+d3FDGSimulate("data/d3-forums-3-12.json");
