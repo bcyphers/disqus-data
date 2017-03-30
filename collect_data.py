@@ -36,7 +36,8 @@ DEDUP = {
     'mtonews': 'mtocom',
 }
 
-DATA_PATH = '/home/bcyphers/projects/disqus-data/data/'
+# TODO
+DATA_PATH = '/home/bcyphers/projects/disqus/disqus-data/data/'
 
 def save_json(data, name):
     path = DATA_PATH + name + '.json'
