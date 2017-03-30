@@ -81,7 +81,7 @@ function d3Simulate(path) {
           .data(graph.nodes)
           .enter().append("circle")
             .attr("r", function(d) { return d.radius; })
-            .attr("fill", function(d) { return color(d.group); })
+            .attr("fill", function(d) { return color(details[d.id].category); })
             .attr("group", function(d) { return d.group; })
             .attr("id", function(d) { return "node-" + d.id; })
             .call(d3.drag()
