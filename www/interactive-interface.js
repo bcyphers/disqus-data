@@ -242,7 +242,7 @@ $(document).ready(function(){
         detailsReady = true;
         finalSetup();
     });
-    forceGraphSimulate("data/d3-forums-3-12.json", d3Callback);
+    forceGraphSimulate("data/forum-graph.json", d3Callback);
 
     function finalSetup() {
         if (detailsReady && d3Ready) {

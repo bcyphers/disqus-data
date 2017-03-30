@@ -98,27 +98,28 @@ def generate_correlations(data, df=None, sortby=None,
     cor_df.to_json(path, orient='split')
 
 
-def generate_cluster_graph(data, df=None, path='www/data/d3-forums.json',
-                           categories=False, e=2, r=3, **kwargs):
+def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
+                           path='www/data/forum-graph.json', **kwargs):
     """
     generate a d3-parseable graph representation of the correlations between
     forums.
 
     df (pd.DataFrame): if provided, don't build a new link matrix
+    cor_cutoff (float): only correlations at least this strong will be included
+        as links
     path (str): where to save the document
-    categories (bool): if true, group forums by official category. Otherwise,
-        group using MCL
-    e (int): passed on to MCL
-    r (float): passed on to MCL
     **kwargs: passed on to build_link_matrix
     """
-
     if df is None:
+        print "building link matrix..."
         df = build_link_matrix(data, **kwargs)
+        print "done"
+
     cor = get_correlations(df)
     nodes = []
     links = []
 
+    print "building nodes..."
     # create node json for each forum
     for f in cor.index:
         weights = data.get_forum_activity()
@@ -128,22 +129,29 @@ def generate_cluster_graph(data, df=None, path='www/data/d3-forums.json',
         nodes.append({'id': f,
                       'name': data.forum_details[f]['name'],
                       'radius': weights[f]})
+    print "done"
 
-    # now, the tricky part: which links to include?
+    # now, the tricky part: create the links
+
+    print "building links..."
+    # start by iterating over all forums
     for i, f1 in enumerate(cor.index):
+        # get the value of the fifth highest correlation with this forum
         f1_top_5 = sorted(cor[f1])[-5]
 
         # iterate over all forums up to and excluding this one
         for f2 in cor.columns[:i]:
             f2_top_5 = sorted(cor[f2])[-5]
 
-            # cull weak links
+            # only include links of sufficient strength, or links in the top 5
             # cor[f2][f1] > 0.9 or
-            if cor[f2][f1] > 0.25 and (cor[f2][f1] >= f1_top_5 or
-                                      cor[f2][f1] >= f2_top_5):
+            if cor[f2][f1] > cor_cutoff and (cor[f2][f1] >= f1_top_5 or
+                                             cor[f2][f1] >= f2_top_5):
                 # ordering doesn't really matter here, the matrix is symmetrical
                 links.append({'source': f1, 'target': f2, 'value': cor[f2][f1]})
+    print "done"
 
+    print "dumping json..."
     out = {'nodes': nodes, 'links': links}
     with open(path, 'w') as f:
         json.dump(out, f)
