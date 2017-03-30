@@ -4,7 +4,7 @@ from collect_data import *
 from analyze_data import *
 from topic_modeler import *
 
-def generate_details(data, df=None, path='www/data/forum-details.json', **kwargs):
+def generate_details(data, df=None, path='www/data/forum-details.json', e=2, r=3, **kwargs):
     """
     generate json document with details for each forum
 
@@ -17,6 +17,20 @@ def generate_details(data, df=None, path='www/data/forum-details.json', **kwargs
     print 'assembling edges...'
     edges = data.get_forum_edges(dedup=True)
     print 'done'
+
+    print 'building link matrix...'
+    if df is None:
+        df = build_link_matrix(data, **kwargs)
+    print 'done'
+
+    cor = get_correlations(df)
+
+    # generate MCL groups
+    groups = do_mcl(cor, e, r)
+    rev_groups = {}
+    for i, (k, group) in enumerate(groups.items()):
+        for forum in group:
+            rev_groups[forum] = k
 
     out = {}
 
@@ -39,6 +53,7 @@ def generate_details(data, df=None, path='www/data/forum-details.json', **kwargs
             'name': details['name'],
             'description': details['description'],
             'category': category,
+            'group': rev_groups.get(f, None),
             'url': details['url'],
             'alexa': details.get('alexaRank', 0),
             'activity': act,
