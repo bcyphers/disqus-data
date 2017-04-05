@@ -1,4 +1,4 @@
-d3.json("data/forum-correlations-beta-small.json", function(data) {
+d3.json("data/correlations-small.json", function(data) {
   var cell_size = 4;
   var nvar = data["index"].length;
   var h = cell_size * nvar;

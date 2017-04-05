@@ -231,17 +231,17 @@ $(document).ready(function(){
     var d3Ready = false,
         detailsReady = false;
 
-    $.getJSON("data/forum-correlations-beta.json", function(json){ correlations = json; });
+    $.getJSON("data/correlations.json", function(json){ correlations = json; });
     $.getJSON("data/topics.json", function(json){ 
         topics = json; 
         buildTopicGraph(topics);
     });
-    $.getJSON("data/forum-details-beta.json", function(json){ 
+    $.getJSON("data/details.json", function(json){ 
         details = json; 
         detailsReady = true;
         finalSetup();
     });
-    forceGraphSimulate("data/forum-graph-beta.json", d3Callback);
+    forceGraphSimulate("data/force-graph-4-05.json", d3Callback);
 
     function finalSetup() {
         if (detailsReady && d3Ready) {
