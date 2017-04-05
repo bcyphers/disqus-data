@@ -87,6 +87,7 @@ function buildTopicGraph(data) {
                     var name = details[forum].name;
                     if (details[forum].url != null) {
                         name = '<a href="' + details[forum].url + '">' + name + '</a>';
+                    }
 
                     $("#topic-list #forum-" + j + " .topic-score").html(value);
                     $("#topic-list #forum-" + j + " .forum-name").html(name);
