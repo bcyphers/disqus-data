@@ -29,9 +29,10 @@ from collect_data import *
 ## Misc ranking functions
 
 
-def build_link_matrix(data, dedup=True, M=None, N=500, square=False, norm=None,
-                      only_en=True, cutoff=1.5, weight_func='references',
-                      src_cats=None, tar_cats=None, sources=None, targets=None):
+def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
+                      row_norm=None, col_norm=None, only_en=True, cutoff=1.5,
+                      weight_func='references', src_cats=None, tar_cats=None,
+                      sources=None, targets=None):
     """
     Convert the sparse representation that get_edges gives us into a dense
     (directed) transition matrix with normalized rows
@@ -42,9 +43,9 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False, norm=None,
     N (int): maximum number of target forums to include in the matrix (columns)
     square (bool): if true, build an MxM square matrix where the column keys are
         the same as the rows (TODO)
-    norm ('l1', 'l2', None): how to normalize the rows in the matrix. This
-        should be tweaked in the future and is probably important to
-        understanding the whole thing
+    <row, col>_norm ('l1', 'l2', None): how to normalize the rows/columns in
+        the matrix. This should be tweaked in the future and is probably
+        important to understanding the whole thing
     only_en (bool): if true, only allow english-language forums
     cutoff (float): if a forum's outgoing links/person average is below this,
         don't include them
@@ -97,9 +98,9 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False, norm=None,
             if connectivity < cutoff:
                 continue
 
+            # limit to top M forums
             if M is None or len(sources) < M:
                 sources.append(f)
-
 
     # build targets list if necessary
     if targets is None:
@@ -139,14 +140,25 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False, norm=None,
 
     # normalize the rows
     for f in df.index:
-        num_users = len(forum_out_links(f))
-        df.ix[f] /= num_users
-
-        # l1 norm produces exact same correlation matrix
-        if norm == 'l1':
+        if row_norm == 'l1':
+            # l1 norm produces exact same correlation matrix
             df.ix[f] /= sum(df.ix[f])
-        elif norm == 'l2':
+        elif row_norm == 'l2':
             df.ix[f] /= np.sqrt(sum(df.ix[f]**2))
+        else:
+            # default: sort of normalize
+            num_users = len(forum_out_links(f))
+            df.ix[f] /= num_users
+
+    # normalize columns
+    for c in df.columns:
+        # "center" te
+        if col_norm == 'center':
+            df[c] -= df[c].mean()
+        elif col_norm == 'l1':
+            df[c] /= sum(df[c])
+        elif col_norm == 'l2':
+            df[c] /= np.sqrt(sum(df[c]**2))
 
     print df.shape
 

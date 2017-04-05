@@ -14,6 +14,7 @@ crossorigin="anonymous"></script>
 src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/js/bootstrap.min.js"
 integrity="sha384-vBWWzlZJ8ea9aCX4pEW3rVHjgjt7zpkNpZk+02D9phzyeVkE+jo0ieGizqPLForn"
 crossorigin="anonymous"></script>
+<script type="text/javascript" src="topic-vis.js"></script>
 
 # Mapping the Disqus Universe, Part 1
 
@@ -29,7 +30,7 @@ Most of my interactions with Disqus are via [The Atlantic](https://www.theatlant
 <p class="caption">A sample Disqus profile page</p>
 
 
-*A note on privacy*: I was interested in trends across Disqus forums, not with the habits of any individual user. In this post I won't call out anyone by name, real or digital, and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web.  Nevertheless, I've downloaded several hundred megabytes of user data, which is a powerful thing. Time and again, [research](https://arxiv.org/pdf/0903.3276.pdf) [has](https://www.media.mit.edu/research/highlights/unique-shopping-mall-reidentifiability-credit-card-metadata) [shown](https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf) that a collection of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to [make their profiles private](https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private) in order to make it harder (though [not impossible](https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf)) for people like me to snoop.  
+*A note on privacy*: I was interested in trends across Disqus forums, not with the habits of any individual user. In this post I won't call out anyone by name, real or digital, and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web. Nevertheless, I've downloaded several hundred megabytes of user data. Time and again, [research](https://arxiv.org/pdf/0903.3276.pdf) [has](https://www.media.mit.edu/research/highlights/unique-shopping-mall-reidentifiability-credit-card-metadata) [shown](https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf) that a collection of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to [make their profiles private](https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private) in order to make it harder (though [not impossible](https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf)) for people like me to snoop.  
 
 So, into the data. Most of the data gathered for this post are from the [`forum.listMostActiveUsers`](https://disqus.com/api/docs/forums/listMostActiveUsers/) and [`user.listMostActiveForums`](https://disqus.com/api/docs/users/listMostActiveForums/) endpoints. In Disqus jargon, a "forum" is more or less equivalent to a site, comments on one article are grouped in a "thread," and each comment is a "post." `listMostActiveUsers` gives a list of a few hundred top users for a particular forum. For each of those, I called `listMostActiveForums`, which returns a list of the forums that a particular user frequents most. By doing so, I could generate a vector for each site showing which other sites its top users visited most. For example, here's the number of the Atlantic's top users (349) for whom each site is a "top forum":
 
@@ -80,7 +81,9 @@ The numbers are more meaningful when compared against a specific forum than they
 
 Here's a broader view of the correlations between the 100 most referenced forums:
 
-<div class="matrix"></div>
+<div class="container">
+  <div class="row" id="matrix"></div>
+</div>
 <script type="text/javascript" src="corr_matrix.js"></script>
 
 <p class="caption">Correlation matrix adapted from Karl Broman's [example](https://github.com/kbroman/d3examples/tree/master/corr_w_scatter)</p>
@@ -91,7 +94,7 @@ The forums here are sorted by category, with Disqus Channels at the top left and
 
 Let's see if we can make more sense of the network. 
 
-A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of cool analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:
+A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of fun analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:
 
 <div class="container">
   <div class="row">
@@ -183,7 +186,25 @@ I hope to have more details about forum activity in the next installment.
 
 ### Topics
 
-Finally, you'll notice a "top topics" section under the force graph. For each forum with enough activity, I pulled down raw text from the forum's most active threads. Treating each thread like a document, I ran topic modeling on the set of all threads. The topics you see for each forum are the most common from all that forum's threads. The score next to each topic is how *much* more common the topic is in that forum than the entire corpus. The details are beyond the scope of this post, but all the code is on [github](https://github.com/bcyphers/disqus-data).
+"Topic modeling" is a class of machine learning algorithms that try to find the abstract "topics" which describe a corpus of text. Suppose you have a set of documents, like a collection of articles from a newspaper. Each article is probably *about* something (or a few different things). Words related to that something will probably show up more often than they do in other documents. An article about World War II will have the words "battle," "fascism" and "Hitler" more often than most other articles will. In contrast, all articles will use lots of generic words like "this," "is," etc. A topic modeler will take a set of documents and pull out groups of words that occur (1) often together in some documents and (2) seldom in others.
+
+For each forum with enough activity, I pulled down raw text from that forum's most active comment threads. I treated each thread like a document and trained a topic model on the set of all threads. I used [Non-negative Matrix Factorization]() to do the modeling, and generated forty topics in all. The rest of the details are beyond the scope of this post, but all the code is on [github](https://github.com/bcyphers/disqus-data).
+
+In the graphic above, the "Top topics" listed for each forum are the most common from all that forum's threads. The score next to each topic is the average "strength" of each topic in all of that forum's documents. You should notice a few topics dominating over a variety of forums: in his first thirty days, people talked a lot about Trump and the government.
+
+The chart below shows each of the forty topics, weighted by how common they are.  Hover over each topic to see which forums talk about it the most.
+
+<div class="container" id="topics">
+<div class="row">
+ <div class="col-4" id="topic-graph">
+ </div>
+ <div class="col" id="topic-list">
+   <b id="topics-title">Details</b>
+   <ol class="list-group">
+   </ol>
+ </div>
+</div>
+</div>
 
 Take all of this with a block of salt: I'm very new to NLP, and may have made some grave statistical errors along the way. Please don't use any of this data as "evidence" to support anything consequential.
 

@@ -58,7 +58,7 @@ class TopicModeler(object):
     LDA = 'lda'  # Latent Dirichlet Allocation
 
     def __init__(self, data, vector_type=TFIDF, model_type=NMF, n_features=1000,
-                 n_topics=50):
+                 n_topics=40):
         """
         Holds state for text processing and topic modeling.
         Vector type choices: 'tfidf', 'tf', 'hash'
@@ -191,10 +191,10 @@ class TopicModeler(object):
         print
         print 'Topics:'
 
-        vec_names = self.vectorizer.get_feature_names()
+        word_names = self.vectorizer.get_feature_names()
         self.topics = []
         for group in self.model.components_:
-            topic = ', '.join(best_feats(vec_names, group))
+            topic = ', '.join(best_feats(word_names, group))
             self.topics.append(topic)
             print '%d.' % len(self.topics), topic
 

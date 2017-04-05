@@ -4,7 +4,17 @@ from collect_data import *
 from analyze_data import *
 from topic_modeler import *
 
-def generate_details(data, df=None, path='www/data/forum-details.json', e=2, r=3, **kwargs):
+def clean_cat(category, name):
+    if category == 'null' or category is None or category == '':
+        category = None
+
+    if category is None and name.startswith('channel-'):
+        category = 'Channel'
+
+    return category
+
+
+def generate_details(data, df=None, path='www/data/details.json', e=2, r=3, **kwargs):
     """
     generate json document with details for each forum
 
@@ -23,6 +33,7 @@ def generate_details(data, df=None, path='www/data/forum-details.json', e=2, r=3
         df = build_link_matrix(data, **kwargs)
     print 'done'
 
+    print 'doing MCL...'
     cor = get_correlations(df)
 
     # generate MCL groups
@@ -31,9 +42,11 @@ def generate_details(data, df=None, path='www/data/forum-details.json', e=2, r=3
     for i, (k, group) in enumerate(groups.items()):
         for forum in group:
             rev_groups[forum] = k
+    print 'done'
 
     out = {}
 
+    print 'dumping json...'
     for f, details in data.forum_details.iteritems():
         act = activity.get(f)
         if f in edges:
@@ -42,12 +55,7 @@ def generate_details(data, df=None, path='www/data/forum-details.json', e=2, r=3
         else:
             connectivity = 0
 
-        category = details['category']
-        if category == 'null' or category is None or category == '':
-            category = None
-
-        if category is None and f.startswith('channel-'):
-            category = 'Channel'
+        category = clean_cat(details['category'], f)
 
         out[f] = {
             'name': details['name'],
@@ -62,23 +70,40 @@ def generate_details(data, df=None, path='www/data/forum-details.json', e=2, r=3
     with open(path, 'w') as f:
         json.dump(out, f)
 
+    return df
 
-def generate_topics(data, model=None, path='www/data/forum-topics.json', min_docs=5):
+
+def generate_topics(data, model=None, path='www/data/topics.json', min_docs=5):
     if model is None:
         model = TopicModeler(data)
         model.train(sample_size=2500)
 
     # only send data on forums with enough documents
-    forums = [f for f, docs in model.docs.items() if len(docs) >= min_docs]
-    topics = model.predict_topics_forums(forums)
+    doc_counts = {f: len(docs) for f, docs in model.docs.items() if len(docs) >= min_docs}
+    topics = model.predict_topics_forums(doc_counts.keys())
+    topics.ix['_baseline'] = model.baseline_topics
 
     # send the relative incidence of each topic
-    rel_topics = topics.apply(lambda row: row / model.baseline_topics, axis=1)
-    rel_topics.transpose().to_json(path)
+    topics.transpose().to_json(path)
+
+    return model
 
 
-def generate_correlations(data, df=None, sortby=None,
-                          path='www/data/forum-correlations.json', **kwargs):
+def generate_correlations(data, df=None, path='www/data/correlations.json', **kwargs):
+    print 'building dataframe...'
+    if df is None:
+        df = build_link_matrix(data, **kwargs)
+
+    print 'building correlation matrix...'
+
+    cor_df = get_correlations(df)
+    cor_df.to_json(path, orient='split')
+
+    return df
+
+
+def generate_corr_scatter(data, df=None, sortby=None,
+                          path='www/data/corr-scatter.json', **kwargs):
     print 'building dataframe...'
     if df is None:
         df = build_link_matrix(data, **kwargs)
@@ -91,15 +116,32 @@ def generate_correlations(data, df=None, sortby=None,
         column = [data.forum_details[f][sortby] for f in df.index]
         key = '_' + sortby
         df[key] = pd.Categorical(column)
-        df = df.sort_values(key)
+        df.sort_values(key, inplace=True)
         del df[key]
 
     cor_df = get_correlations(df)
-    cor_df.to_json(path, orient='split')
+    cor_data = json.loads(cor_df.to_json(orient='split'))
+    min_max = {f: [min(df.ix[f]), max(df.ix[f])] for f in df.index}
+    point_data = []
+    for c in df.columns:
+        points = {f: df.ix[f, c] for f in df.index}
+        points['group'] = clean_cat(data.forum_details[c]['category'], c)
+        points['id'] = c
+        point_data.append(points)
+
+    out_data = {
+        'var': list(cor_df.index),
+        'corr': cor_data['data'],
+        'minMax': min_max,
+        'points': point_data,
+    }
+    json.dump(out_data, open(path, 'w'))
+
+    return df
 
 
 def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
-                           path='www/data/forum-graph.json', **kwargs):
+                           path='www/data/force-graph.json', **kwargs):
     """
     generate a d3-parseable graph representation of the correlations between
     forums.
@@ -131,9 +173,8 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
                       'radius': weights[f]})
     print "done"
 
-    # now, the tricky part: create the links
-
     print "building links..."
+    # now, the tricky part: create the links
     # start by iterating over all forums
     for i, f1 in enumerate(cor.index):
         # get the value of the fifth highest correlation with this forum
@@ -155,3 +196,5 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
     out = {'nodes': nodes, 'links': links}
     with open(path, 'w') as f:
         json.dump(out, f)
+
+    return df

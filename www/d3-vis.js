@@ -40,13 +40,17 @@ function forceGraphSimulate(path, callback) {
     var color = d3.scaleOrdinal(d3.schemeCategory20);
 
     var simulation = d3.forceSimulation()
+        // links pull nodes together, strength proportional to correlation
         .force("link", d3.forceLink()
             .id(function(d) { return d.id; })
+            // desired length is proportional to 
+            .distance(function(d) { return 100 * Math.pow(1 - d.value, 1); })
             .strength(function(d) { return d.value; }))
         .force("charge", d3.forceManyBody())
         .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collide", d3.forceCollide().radius(
-              function(d) { return d.radius + 0.5; }).iterations(2))
+        .force("collide", d3.forceCollide()
+            .radius(function(d) { return d.radius + 0.5; })
+            .iterations(2))
         .force("y", d3.forceY(0).strength(0.05))
         .force("x", d3.forceX(0).strength(0.05));
   

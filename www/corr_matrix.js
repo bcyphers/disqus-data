@@ -1,4 +1,4 @@
-d3.json("data/forum-correlations-small.json", function(data) {
+d3.json("data/forum-correlations-beta-small.json", function(data) {
   var cell_size = 4;
   var nvar = data["index"].length;
   var h = cell_size * nvar;
@@ -14,7 +14,7 @@ d3.json("data/forum-correlations-small.json", function(data) {
   var totalh = h + pad.top + pad.bottom;
   var totalw = w + pad.left + pad.right;
     
-  var svg = d3.select("div.matrix")
+  var svg = d3.select("div#matrix")
       .append("svg")
       .attr("id", "matrix-plot")
       .attr("height", totalh)
@@ -129,13 +129,4 @@ d3.json("data/forum-correlations-small.json", function(data) {
       .on("mouseover", mouseOver)
       .on("mouseout",  mouseOut)
       .on("click", function(d) { return drawScatter(d.col, d.row); });
-
-  // draw the black outline
-  //corrplot.append("rect")
-    //.attr("height", h)
-    //.attr("width", w)
-    //.attr("fill", "none")
-    //.attr("stroke", "black")
-    //.attr("stroke-width", 1)
-    //.attr("pointer-events", "none");
 });

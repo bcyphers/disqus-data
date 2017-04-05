@@ -101,23 +101,19 @@ function updateDescription(forum) {
             var tops = topics[forum];
 
             // sort topics by score
-            var list = Object.keys(tops).map(function(key) { return [key, tops[key]]; });
+            var list = Object.keys(tops).map(function(key) { 
+                return [key, tops[key]]; 
+            });
             list.sort(function(first, second) { return second[1] - first[1]; });
 
             $("#topics-title").html("Top topics");
             var i = 0;
             while (i < 3) {
                 var name = list[i][0];
-                var num_dec = 2 - Math.floor(Math.log10(list[i][1]));
-                var value = list[i][1].toFixed(num_dec);
+                var value = list[i][1].toFixed(3).slice(1);
 
-                if (value > 1) {
-                    $("#topic-" + i + " .topic-score").html(value);
-                    $("#topic-" + i + " .topic-name").html(name);
-                } else {
-                    $("#topic-" + i + " .topic-score").html("");
-                    $("#topic-" + i + " .topic-name").html("");
-                }
+                $("#topic-" + i + " .topic-score").html(value);
+                $("#topic-" + i + " .topic-name").html(name);
 
                 i++;
             }
@@ -235,14 +231,17 @@ $(document).ready(function(){
     var d3Ready = false,
         detailsReady = false;
 
-    $.getJSON("data/forum-topics.json", function(json){ topics = json; });
-    $.getJSON("data/forum-correlations.json", function(json){ correlations = json; });
-    $.getJSON("data/forum-details.json", function(json){ 
+    $.getJSON("data/forum-correlations-beta.json", function(json){ correlations = json; });
+    $.getJSON("data/topics.json", function(json){ 
+        topics = json; 
+        buildTopicGraph(topics);
+    });
+    $.getJSON("data/forum-details-beta.json", function(json){ 
         details = json; 
         detailsReady = true;
         finalSetup();
     });
-    forceGraphSimulate("data/forum-graph.json", d3Callback);
+    forceGraphSimulate("data/forum-graph-beta.json", d3Callback);
 
     function finalSetup() {
         if (detailsReady && d3Ready) {

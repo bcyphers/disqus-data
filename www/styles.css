@@ -1,3 +1,5 @@
+/* Styling for markdown-generated text */
+
 body {
   margin: 0 auto;
   padding: 4em 1em;
@@ -66,19 +68,19 @@ p.caption {
 
 /* Styling for the correlation matrix visual */
 
-div.matrix {
+div#matrix {
   padding: 0 auto;
   margin: 0 auto;
 }
 
-.matrix svg {
+#matrix svg {
   display: block;
   margin: 0 auto;
   margin-bottom: 1em;
   overflow: visible;
 }
 
-.matrix line {
+#matrix line {
   fill: none;
   stroke-width: 1;
 }
@@ -88,7 +90,7 @@ text#corrtext {
   border-radius: 2px;
 }
 
-/* Styling for the d3 visual */
+/* Styling for the force-directed graph visual */
 
 .links line {
   stroke: #999;
@@ -121,6 +123,8 @@ text#corrtext {
   opacity: 1.0;
 }
 
+/* Styling for the force-directed graph info box */
+
 .top-buffer { 
   margin-top:20px; 
 }
@@ -135,10 +139,26 @@ text#corrtext {
   overflow: auto;
 }
 
-ol li {
+.info-container ol li {
   list-style-type: none;
 }
 
-ul li {
+.info-container ul li {
   list-style: none;
+}
+
+/* Styling for the topic modeling visual */
+
+div#topics {
+  margin-bottom: 2em;
+}
+
+#topic-graph div.topic-box {
+  padding: 0;
+
+}
+
+#topic-graph div.topic-box:hover {
+  padding: 0;
+
 }

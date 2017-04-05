@@ -41,6 +41,7 @@ crossorigin="anonymous"></script>
 src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/js/bootstrap.min.js"
 integrity="sha384-vBWWzlZJ8ea9aCX4pEW3rVHjgjt7zpkNpZk+02D9phzyeVkE+jo0ieGizqPLForn"
 crossorigin="anonymous"></script>
+<script type="text/javascript" src="topic-vis.js"></script>
 
 <h1 id="mapping-the-disqus-universe-part-1">Mapping the Disqus Universe, Part 1</h1>
 <p>Disqus is a comment service for websites. You've probably seen their ubiquitous little speech bubble around the web; maybe you even have an account. The company powers sites like The Atlantic, Rolling Stone, People, and Breitbart (although only three of those are advertised on their website). According to their literature, they serve 2 billion monthly unique users and 50 million comments per month from 196 countries. Disqus calls itself &quot;the world's largest first-party data set.&quot;</p>
@@ -53,7 +54,7 @@ A sample Disqus profile page
 </p>
 
 
-<p><em>A note on privacy</em>: I was interested in trends across Disqus forums, not with the habits of any individual user. In this post I won't call out anyone by name, real or digital, and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web. Nevertheless, I've downloaded several hundred megabytes of user data, which is a powerful thing. Time and again, <a href="https://arxiv.org/pdf/0903.3276.pdf">research</a> <a href="https://www.media.mit.edu/research/highlights/unique-shopping-mall-reidentifiability-credit-card-metadata">has</a> <a href="https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf">shown</a> that a collection of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to <a href="https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private">make their profiles private</a> in order to make it harder (though <a href="https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf">not impossible</a>) for people like me to snoop.</p>
+<p><em>A note on privacy</em>: I was interested in trends across Disqus forums, not with the habits of any individual user. In this post I won't call out anyone by name, real or digital, and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web. Nevertheless, I've downloaded several hundred megabytes of user data. Time and again, <a href="https://arxiv.org/pdf/0903.3276.pdf">research</a> <a href="https://www.media.mit.edu/research/highlights/unique-shopping-mall-reidentifiability-credit-card-metadata">has</a> <a href="https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf">shown</a> that a collection of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to <a href="https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private">make their profiles private</a> in order to make it harder (though <a href="https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf">not impossible</a>) for people like me to snoop.</p>
 <p>So, into the data. Most of the data gathered for this post are from the <a href="https://disqus.com/api/docs/forums/listMostActiveUsers/"><code>forum.listMostActiveUsers</code></a> and <a href="https://disqus.com/api/docs/users/listMostActiveForums/"><code>user.listMostActiveForums</code></a> endpoints. In Disqus jargon, a &quot;forum&quot; is more or less equivalent to a site, comments on one article are grouped in a &quot;thread,&quot; and each comment is a &quot;post.&quot; <code>listMostActiveUsers</code> gives a list of a few hundred top users for a particular forum. For each of those, I called <code>listMostActiveForums</code>, which returns a list of the forums that a particular user frequents most. By doing so, I could generate a vector for each site showing which other sites its top users visited most. For example, here's the number of the Atlantic's top users (349) for whom each site is a &quot;top forum&quot;:</p>
 <pre class="sourceCode python"><code class="sourceCode python">outgoing_links[<span class="st">&quot;The Atlantic&quot;</span>] = {
 <span class="st">&quot;The Hill&quot;</span>: <span class="dv">149</span>, 
@@ -151,8 +152,10 @@ Example correlations between user cross-pollination vectors on the top 500 most-
 <p>Disqus forums are labeled with one of a few categories, like &quot;News,&quot; &quot;Sports,&quot; and &quot;Business.&quot; Most of the sites I pulled data for are news- or politics-related, and those tend to correlate highly with each other in spite of ideological differences. Forums from under-represented categories, like Entertainment and Technology, correlate less strongly with anything (but more strongly with forums in their own category). It might be worthwile to generate correlation matrices on samples weighted by category.</p>
 <p>The numbers are more meaningful when compared against a specific forum than they are globally. The Atlantic correlates with Breitbart (0.57), but 154 other forums correlate with Breitbart more strongly; likewise, 167 forums are more correlated with The Atlantic. Meanwhile, the top correlation with The AV Club is <a href="http://tomandlorenzo.com/">Tom and Lorenzo</a> at 0.58.</p>
 <p>Here's a broader view of the correlations between the 100 most referenced forums:</p>
-<div class="matrix">
+<div class="container">
+<div id="matrix" class="row">
 
+</div>
 </div>
 <script type="text/javascript" src="corr_matrix.js"></script>
 
@@ -163,7 +166,7 @@ Correlation matrix adapted from Karl Broman's <a href="https://github.com/kbroma
 <p>The forums here are sorted by category, with Disqus Channels at the top left and News in the bottom-right quadrant.</p>
 <h3 id="clustering">Clustering</h3>
 <p>Let's see if we can make more sense of the network.</p>
-<p>A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of cool analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:</p>
+<p>A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of fun analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:</p>
 <div class="container">
   <div class="row">
     <svg id="force-directed" width="1280" height="720" class="img-fluid" alt="Responsive image"></svg>
@@ -259,7 +262,23 @@ Fifty thousand people used to post here. Now it's a ghost town.
 <p>Some of them, like Politico and The National Review, have switched over to Facebook-powered comment machinery. Others, like CNN and Bloomberg, appear to have ditched comments altogether. It's possible this is related to hate speech issues Disqus has had in the past (and has recently <a href="https://blog.disqus.com/our-commitment-to-fighting-hate-speech">tried to address</a>), or maybe it's part of <a href="http://www.breitbart.com/tech/2015/10/27/the-lefts-war-on-comment-sections/">the Left's war on comments</a>... I haven't delved deeper, but it's interesting either way.</p>
 <p>I hope to have more details about forum activity in the next installment.</p>
 <h3 id="topics">Topics</h3>
-<p>Finally, you'll notice a &quot;top topics&quot; section under the force graph. For each forum with enough activity, I pulled down raw text from the forum's most active threads. Treating each thread like a document, I ran topic modeling on the set of all threads. The topics you see for each forum are the most common from all that forum's threads. The score next to each topic is how <em>much</em> more common the topic is in that forum than the entire corpus. The details are beyond the scope of this post, but all the code is on <a href="https://github.com/bcyphers/disqus-data">github</a>.</p>
+<p>&quot;Topic modeling&quot; is a class of machine learning algorithms that try to find the abstract &quot;topics&quot; which describe a corpus of text. Suppose you have a set of documents, like a collection of articles from a newspaper. Each article is probably <em>about</em> something (or a few different things). Words related to that something will probably show up more often than they do in other documents. An article about World War II will have the words &quot;battle,&quot; &quot;fascism&quot; and &quot;Hitler&quot; more often than most other articles will. In contrast, all articles will use lots of generic words like &quot;this,&quot; &quot;is,&quot; etc. A topic modeler will take a set of documents and pull out groups of words that occur (1) often together in some documents and (2) seldom in others.</p>
+<p>For each forum with enough activity, I pulled down raw text from that forum's most active comment threads. I treated each thread like a document and trained a topic model on the set of all threads. I used <a href="">Non-negative Matrix Factorization</a> to do the modeling, and generated forty topics in all. The rest of the details are beyond the scope of this post, but all the code is on <a href="https://github.com/bcyphers/disqus-data">github</a>.</p>
+<p>In the graphic above, the &quot;Top topics&quot; listed for each forum are the most common from all that forum's threads. The score next to each topic is the average &quot;strength&quot; of each topic in all of that forum's documents. You should notice a few topics dominating over a variety of forums: in his first thirty days, people talked a lot about Trump and the government.</p>
+<p>The chart below shows each of the forty topics, weighted by how common they are. Hover over each topic to see which forums talk about it the most.</p>
+<div class="container" id="topics">
+<div class="row">
+ <div class="col-4" id="topic-graph">
+ </div>
+ <div class="col" id="topic-list">
+   
+<b id="topics-title">Details</b>
+<ol class="list-group">
+   </ol>
+ </div>
+</div>
+</div>
+
 <p>Take all of this with a block of salt: I'm very new to NLP, and may have made some grave statistical errors along the way. Please don't use any of this data as &quot;evidence&quot; to support anything consequential.</p>
 <p>With that said, there's some really interesting stuff. World Star commenters talk about race much more than average, and music isn't even in the top 3. Other sites correlated with World Star have a similar pattern. Android Authority, predictably, talks about &quot;phone google data&quot; much more than normal, but also about &quot;china south war north military.&quot; At <a href="http://takimag.com">Taki's Mag</a>, which flirts with white nationalism, comment threads were mostly about whites, blacks, racism, Milo, and Israel. At Occidental Dissent, which is <a href="http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/">openly fascist</a>, the dominant topic was &quot;california state illegals states union.&quot;</p>
 <p>Looking at topics on news sites also let us guage the important news cycles for the sample time period -- the first 30 days of Trump's presidency. Across the ideological spectrum, &quot;milo breitbart sexual speech defend&quot; was a trending topic, as was &quot;news media cnn press fox&quot; and &quot;trump president obama donald hillary.&quot; Left-leaning sites tended to talk more about &quot;flynn administration russian russia trump&quot; than right-leaning ones. A topic about &quot;soros george america money paid&quot; was present almost exclusively on conservative forums.</p>
