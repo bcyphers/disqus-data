@@ -97,7 +97,7 @@ Let's see if we can make more sense of the network.
 A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of fun analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:
 
 <p class="caption">
-Click on a circle in the middle of the graph and drag it around to help the simulation take shape.
+Click on a circle and drag it around to see how the forums interact.
 </p>
 <div class="container">
   <div class="row">
@@ -161,6 +161,9 @@ Click on a circle in the middle of the graph and drag it around to help the simu
     </div>
   </div>
 </div>
+<p class="caption">
+Click  on the "Category" and "Clusters With" links to highlight groups in the graph.
+</p>
 <script src="d3-vis.js"></script>
 <script src="interactive-interface.js"></script>
 
@@ -168,11 +171,11 @@ Each circle is a forum, and links are correlations. In this graph, I only includ
 
 Markov Clustering (MCL) is one way to group the forums algorithmically. You can read about it [here](http://micans.org/mcl/), it's fascinating. Basically, you provide a graph with edge weights, and the algorithm manipulates the graph so that each vertex "clusters" around a single other vertex -- possibly itself. There are two parameters, e and r, which control how large the clusters are. You can see the results of the clustering by selecting "Markov clusters" under "Color by..."
 
-What's striking about the graph is how tight some of the regions are. Again, the "News" sites tend to cluster together in the middle, but that's not the whole story. If you scan that big region in the middle, you'll notice a lot of "Culture," "Business," and some "Entertainment" as well. And check out the region around Breitbart (one of the biggest circles, to the left of the graph).  There are dozens of sites that correlate quite strongly with each other -- the conservative blogosphere. 
+What's striking about the graph is how tight some of the regions are. Again, the "News" sites tend to cluster together in the middle, but that's not the whole story. If you scan that big region in the middle, you'll notice a lot of "Culture," "Business," and some "Entertainment" as well. And check out the region around Breitbart (one of the biggest circles, towards the top of the graph).  There are dozens of sites that correlate quite strongly with each other -- the conservative blogosphere. 
 
-Turn on Markov coloring. You can click on the "Clusters with" link under forum details to hilight a cluster in the graph. Breitbart & co. are mostly in blue, though the green group is closely related. Liberal blogs have their own clusters -- [Media Matters](https://mediamatters.org/), [Wonkette](https://wonkette.com/), and [Raw Story](http://www.rawstory.com/) form the core of a tan group towards the bottom. The orange group includes a lot of the "old guard:" The Atlantic, Rolling Stone, and CBS local affiliates, plus, for some reason, a whole bunch of entertainment sites. 
+Turn on Markov coloring. You can click on the "Clusters with" link under forum details to highlight a cluster in the graph. Breitbart & co. are mostly in blue, though the green group is closely related. Liberal blogs have their own clusters -- [Media Matters](https://mediamatters.org/), [Wonkette](https://wonkette.com/), and [Raw Story](http://www.rawstory.com/) form the core of a tan group towards the left. The orange cluster includes a lot of the "old guard:" The Atlantic, Rolling Stone, and CBS local affiliates, plus, for some reason, a whole bunch of entertainment sites. 
 
-Look at the top correlations for blue sites. Most of them have more than one correlation above .9; Breitbart has five.  The green group is even more tight-knit. Due to the way I added links (a maximum of five per forum), a portion of the green group cuts itself off from the rest of the network by being *too* connected. You should see it floating off to the left.  [TotalConservative](http://totalconservative.com/), [UnfilteredPatriot](http://unfilteredpatriot.com/), [PatriotNewsDaily](http://patriotnewsdaily.com/): all these forums have r-values of over .99 with each other. They also correlate with blue-group forums quite well, but don't get a chance to link to them because of link limits. The only other cliques in the graph this tight involve sub-forums of the same site, e.g. CBS local stations or Disqus channels.
+Look at the top correlations for the dark blue forums. Most of them have more than one correlation above .9; Breitbart has five.  The green group is even more tight-knit. Due to the way I added links (a maximum of five per forum), portions of the green group cut themselves off from the rest of the network by being *too* connected. You should see them floating off to the left.  [TotalConservative](http://totalconservative.com/), [UnfilteredPatriot](http://unfilteredpatriot.com/), [PatriotNewsDaily](http://patriotnewsdaily.com/): all these forums have r-values of over .99 with each other. They also correlate with blue-group forums quite well, but don't get a chance to link to them because of link limits. The only other cliques in the graph this tight involve sub-forums of the same site, e.g.  CBS local stations or Disqus channels.
 
 ### Activity
 
@@ -195,7 +198,7 @@ For each forum with enough activity, I pulled down raw text from that forum's mo
 
 In the graphic above, the "Top topics" listed for each forum are the most common from all that forum's threads. The score next to each topic is the average "strength" of each topic in all of that forum's documents. You should notice a few topics dominating over a variety of forums: in his first thirty days, people talked a lot about Trump and the government.
 
-The chart below shows each of the forty topics, each represented by a rectangle and weighted by how common it is. Hover over each topic bar to see which forums talk about it the most. And please take all of this with a block of salt: I'm very new to NLP and may have made some grave statistical errors along the way. Don't use any of this data as "evidence" to support anything consequential.
+The hastily-built chart below shows each of the forty topics, each represented by a rectangle and weighted by how common it is. Hover over each topic bar to see which forums talk about it the most. And please take all of this with a block of salt: I'm very new to NLP and may have made some grave statistical errors along the way. Don't use any of this data as "evidence" to support anything consequential.
 
 <div class="container" id="topics">
 <div class="row">
@@ -208,10 +211,15 @@ The chart below shows each of the forty topics, each represented by a rectangle 
  </div>
 </div>
 </div>
+<p class="caption">
+Hover over a topic to see which forums talked about it the most.
+</p>
 
-With that said, we have some pretty interesting results. Looking at topics on news sites gives us a slice of the news cycle for the sample time period -- the first 30 days of Trump's presidency. During that time, "sessions, russian, russians, campaign, senator" and "milo, speech, gay, breitbart, right" were both trending topics. The two forums talking most about "black, white, racist..." are the black-focused [Clutch Magazine](http://www.clutchmagonline.com/) and the white-supremicist [American Renaissance](https://www.amren.com/). Talking most about "trump, obama, president..." are political blogs like [The Hill](http://thehill.com/), [The Right Scoop](http://therightscoop.com/), and... [TMZ](http://www.tmz.com/)?  
+With that said, we have some pretty interesting results. 
 
-At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about race, Milo, and Israel. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "california, state, illegals, states, union." [Android Authority](http://www.androidauthority.com/), predictably, talks about "phone google data" much more than normal, but also about "china, south, war, north, military."
+First, check out the top topics for each site in the network graph above. At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about "soros, government, violence" and race. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "israel, jews, jewish, anti, land." [Wired](http://www.wired.com/) readers talk about "science, climate, evidence" more than anything else. And check out [Packers.com](http://packers.com/): it looks like sports chat wasn't common enough to earn its own topic, but the model associated the both the TV-show related "season, shows, new..." and the video game-related "game, games, play..." with the Pack.
+
+Now take a look at the top topics overall. The most common topic is the generic-sounding "really, way, going, make, say," but the second-most common is about Trump and the election. You'll notice topics on trending news stories from that month, like ["flynn, russian, administration, pence, security"](https://www.washingtonpost.com/world/national-security/national-security-adviser-flynn-discussed-sanctions-with-russian-ambassador-despite-denials-officials-say/2017/02/09/f85b29d6-ee11-11e6-b4ff-ac2cf509efe5_story.html) and ["milo, speech, gay, breitbart, right"](http://www.cbsnews.com/news/milo-yiannopoulos-says-he-was-not-supporting-pedophilia/).  The two forums talking most about "black, white, racist..." were the black-focused [Clutch Magazine](http://www.clutchmagonline.com/) and the white-supremicist [American Renaissance](https://www.amren.com/). Talking most about "trump, obama, president..." were political blogs like [The Hill](http://thehill.com/), [The Right Scoop](http://therightscoop.com/), and... [TMZ](http://www.tmz.com/)?  
 
 ### Next Steps
 
