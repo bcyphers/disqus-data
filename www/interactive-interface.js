@@ -279,6 +279,7 @@ $(document).ready(function(){
 });
 
 function saveGraphPositions() {
+    var graph = {};
     $('.nodes circle').each(function() {
         graph[$(this).attr('id')] = {
             x: $(this).attr('cx'), 
