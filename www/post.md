@@ -96,6 +96,9 @@ Let's see if we can make more sense of the network.
 
 A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of fun analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:
 
+<p class="caption">
+Click on a circle in the middle of the graph and drag it around to help the simulation take shape.
+</p>
 <div class="container">
   <div class="row">
     <svg id="force-directed" width="1280" height="720" class="img-fluid" alt="Responsive image"></svg>
@@ -161,7 +164,7 @@ A correlation matrix looks an awful lot like a fully-connected graph, and graphs
 <script src="d3-vis.js"></script>
 <script src="interactive-interface.js"></script>
 
-Each circle is a forum, and links are correlations. In this graph, I only included correlations greater than 0.2, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.  
+Each circle is a forum, and links are correlations. In this graph, I only included correlations greater than 0.5, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.
 
 Markov Clustering (MCL) is one way to group the forums algorithmically. You can read about it [here](http://micans.org/mcl/), it's fascinating. Basically, you provide a graph with edge weights, and the algorithm manipulates the graph so that each vertex "clusters" around a single other vertex -- possibly itself. There are two parameters, e and r, which control how large the clusters are. You can see the results of the clustering by selecting "Markov clusters" under "Color by..."
 
@@ -188,11 +191,11 @@ I hope to have more details about forum activity in the next installment.
 
 "Topic modeling" is a class of machine learning algorithms that try to find the abstract "topics" which describe a corpus of text. Suppose you have a set of documents, like a collection of articles from a newspaper. Each article is probably *about* something (or a few different things). Words related to that something will probably show up more often than they do in other documents. An article about World War II will have the words "battle," "fascism" and "Hitler" more often than most other articles will. In contrast, all articles will use lots of generic words like "this," "is," etc. A topic modeler will take a set of documents and pull out groups of words that occur (1) often together in some documents and (2) seldom in others.
 
-For each forum with enough activity, I pulled down raw text from that forum's most active comment threads. I treated each thread like a document and trained a topic model on the set of all threads. I used [Non-negative Matrix Factorization]() to do the modeling, and generated forty topics in all. The rest of the details are beyond the scope of this post, but all the code is on [github](https://github.com/bcyphers/disqus-data).
+For each forum with enough activity, I pulled down raw text from that forum's most active comment threads. I treated each thread like a document and trained a topic model on the set of all threads. I used [Non-negative Matrix Factorization](https://en.wikipedia.org/wiki/Non-negative_matrix_factorization) to do the modeling, and generated forty topics in all. The rest of the details are beyond the scope of this post, but all the code is on [github](https://github.com/bcyphers/disqus-data).
 
 In the graphic above, the "Top topics" listed for each forum are the most common from all that forum's threads. The score next to each topic is the average "strength" of each topic in all of that forum's documents. You should notice a few topics dominating over a variety of forums: in his first thirty days, people talked a lot about Trump and the government.
 
-The chart below shows each of the forty topics, weighted by how common they are.  Hover over each topic bar to see which forums talk about it the most. And please take all of this with a block of salt: I'm very new to NLP, and may have made some grave statistical errors along the way. Please don't use any of this data as "evidence" to support anything consequential.
+The chart below shows each of the forty topics, each represented by a rectangle and weighted by how common it is. Hover over each topic bar to see which forums talk about it the most. And please take all of this with a block of salt: I'm very new to NLP and may have made some grave statistical errors along the way. Don't use any of this data as "evidence" to support anything consequential.
 
 <div class="container" id="topics">
 <div class="row">
@@ -208,7 +211,7 @@ The chart below shows each of the forty topics, weighted by how common they are.
 
 With that said, we have some pretty interesting results. Looking at topics on news sites gives us a slice of the news cycle for the sample time period -- the first 30 days of Trump's presidency. During that time, "sessions, russian, russians, campaign, senator" and "milo, speech, gay, breitbart, right" were both trending topics. The two forums talking most about "black, white, racist..." are the black-focused [Clutch Magazine](http://www.clutchmagonline.com/) and the white-supremicist [American Renaissance](https://www.amren.com/). Talking most about "trump, obama, president..." are political blogs like [The Hill](http://thehill.com/), [The Right Scoop](http://therightscoop.com/), and... [TMZ](http://www.tmz.com/)?  
 
-At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about race, Milo, and Israel. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "california, state, illegals, states, union." [Android Authority](http://www.androidauthority.com/), predictably, talks about "phone google data" much more than normal, but also about "china, south, war, north, military." 
+At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about race, Milo, and Israel. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "california, state, illegals, states, union." [Android Authority](http://www.androidauthority.com/), predictably, talks about "phone google data" much more than normal, but also about "china, south, war, north, military."
 
 ### Next Steps
 

@@ -232,16 +232,18 @@ $(document).ready(function(){
         detailsReady = false;
 
     $.getJSON("data/correlations.json", function(json){ correlations = json; });
-    $.getJSON("data/topics.json", function(json){ 
+    $.getJSON("data/topics.json", function(json) { 
         topics = json; 
         buildTopicGraph(topics);
     });
-    $.getJSON("data/details.json", function(json){ 
+    $.getJSON("data/details.json", function(json) { 
         details = json; 
         detailsReady = true;
         finalSetup();
     });
-    forceGraphSimulate("data/force-graph-4-05.json", d3Callback);
+    $.getJSON("data/force-graph-init.json", function(json) {
+      forceGraphSimulate("data/force-graph-4-05.json", d3Callback, json);
+    }
 
     function finalSetup() {
         if (detailsReady && d3Ready) {
@@ -275,3 +277,14 @@ $(document).ready(function(){
         finalSetup();
     }
 });
+
+function saveGraphPositions() {
+    $('.nodes circle').each(function() {
+        graph[$(this).attr('id')] = {
+            x: $(this).attr('cx'), 
+            y: $(this).attr('cy')
+        };
+    });
+
+    localStorage.setItem('graph.json', JSON.stringify(graph));
+}

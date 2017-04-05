@@ -32,7 +32,7 @@ function getTransformation(transform) {
 }
 
 
-function forceGraphSimulate(path, callback) {
+function forceGraphSimulate(path, callback, initPos) {
     var svg = d3.select("svg#force-directed"),
         width = +svg.attr("width"),
         height = +svg.attr("height");
@@ -76,8 +76,14 @@ function forceGraphSimulate(path, callback) {
           .enter().append("circle")
             .attr("r", function(d) { return d.radius; })
             .attr("fill", "f2f2f2")
-            .attr("id", function(d) { return "node-" + d.id; })
-            .call(d3.drag()
+            .attr("id", function(d) { return "node-" + d.id; });
+
+        if (initPos != null) {
+            node.attr("cx", function(d) { return initPos["node-" + d.id].x; })
+                .attr("cy", function(d) { return initPos["node-" + d.id].y; });
+        }
+
+        node.call(d3.drag()
                 .on("start", dragStarted)
                 .on("drag", dragged)
                 .on("end", dragEnded));
