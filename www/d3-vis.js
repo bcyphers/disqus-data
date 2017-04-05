@@ -51,6 +51,7 @@ function forceGraphSimulate(path, callback, initPos) {
         .force("collide", d3.forceCollide()
             .radius(function(d) { return d.radius + 0.5; })
             .iterations(2))
+        // everything is pulled gently towards the center
         .force("y", d3.forceY(0).strength(0.05))
         .force("x", d3.forceX(0).strength(0.05));
   
@@ -59,6 +60,14 @@ function forceGraphSimulate(path, callback, initPos) {
 
     d3.json(path, function(error, graph) {
         if (error) throw error;
+
+        if (initPos != null) {
+            for (var i = 0; i < graph.nodes.length; i++) {
+                var id = "node-" + graph.nodes[i].id;
+                graph.nodes[i].x = Number(initPos[id].x); 
+                graph.nodes[i].y = Number(initPos[id].y);
+            }
+        }
   
         var link = svg.append("g")
             .attr("class", "links")
@@ -76,15 +85,8 @@ function forceGraphSimulate(path, callback, initPos) {
           .enter().append("circle")
             .attr("r", function(d) { return d.radius; })
             .attr("fill", "f2f2f2")
-            .attr("id", function(d) { return "node-" + d.id; });
-
-        if (initPos != null) {
-            node.call(function(d) { 
-                d.x = initPos["node-" + d.id].x; 
-                d.y = initPos["node-" + d.id].y; });
-        }
-
-        node.call(d3.drag()
+            .attr("id", function(d) { return "node-" + d.id; })
+            .call(d3.drag()
                 .on("start", dragStarted)
                 .on("drag", dragged)
                 .on("end", dragEnded));
