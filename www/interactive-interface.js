@@ -243,7 +243,7 @@ $(document).ready(function(){
     });
     $.getJSON("data/force-graph-init.json", function(json) {
       forceGraphSimulate("data/force-graph-4-05.json", d3Callback, json);
-    }
+    });
 
     function finalSetup() {
         if (detailsReady && d3Ready) {

@@ -79,8 +79,9 @@ function forceGraphSimulate(path, callback, initPos) {
             .attr("id", function(d) { return "node-" + d.id; });
 
         if (initPos != null) {
-            node.attr("cx", function(d) { return initPos["node-" + d.id].x; })
-                .attr("cy", function(d) { return initPos["node-" + d.id].y; });
+            node.call(function(d) { 
+                d.x = initPos["node-" + d.id].x; 
+                d.y = initPos["node-" + d.id].y; });
         }
 
         node.call(d3.drag()
