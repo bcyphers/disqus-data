@@ -78,22 +78,18 @@ function buildTopicGraph(data) {
             // update information box with top forums for topic on hover
             return function(e) {
                 $("#topic-list #topics-title").html('Top forums for topic "' + topic + '"');
-                var j = 0;
-                while (j < 10) {
+                for (var j = 0; j < 10; j++) {
                     var forum = forums[j][0];
                     var value = forums[j][1] / baseline;
-                    var name = details[forum].name;
                     var num_dec = Math.max(2 - Math.floor(Math.log10(value)), 0);
                     value = value.toFixed(num_dec);
 
-                    if (value > 1) {
-                        $("#topic-list #forum-" + j + " .topic-score").html(value);
-                        $("#topic-list #forum-" + j + " .forum-name").html(name);
-                    } else {
-                        $("#topic-list #forum-" + j + " .topic-score").html("");
-                        $("#topic-list #forum-" + j + " .forum-name").html("");
-                    }
-                    j++;
+                    var name = details[forum].name;
+                    if (details[forum].url != null) {
+                        name = '<a href="' + details[forum].url + '">' + name + '</a>';
+
+                    $("#topic-list #forum-" + j + " .topic-score").html(value);
+                    $("#topic-list #forum-" + j + " .forum-name").html(name);
                 }
             }
         })(t, topics[t].forums, data['_baseline'][t]);
