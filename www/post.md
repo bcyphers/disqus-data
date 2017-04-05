@@ -96,9 +96,6 @@ Let's see if we can make more sense of the network.
 
 A correlation matrix looks an awful lot like a fully-connected graph, and graphs lend themselves to all kinds of fun analysis. Let's say each forum is a vertex, and each positive correlation value is an edge. We can use the correlation values to power a force-directed graph, where a high correlation pulls two forums together and a weak or negative one pushes them apart. With a few hundred forums, it looks like this:
 
-<p class="caption">
-Click on a circle and drag it around to see how the forums interact.
-</p>
 <div class="container">
   <div class="row">
     <svg id="force-directed" width="1280" height="720" class="img-fluid" alt="Responsive image"></svg>
@@ -162,12 +159,15 @@ Click on a circle and drag it around to see how the forums interact.
   </div>
 </div>
 <p class="caption">
-Click  on the "Category" and "Clusters With" links to highlight groups in the graph.
+<p class="caption">
+Click on a circle and drag it around to see how the forums interact.
+Hover over or click on forums to see more information, and scroll to zoom. 
+Click on the "Category" and "Clusters With" links to highlight groups in the graph.
 </p>
 <script src="d3-vis.js"></script>
 <script src="interactive-interface.js"></script>
 
-Each circle is a forum, and links are correlations. Hover over or click on forums to see more information, and scroll to zoom. In this graph, I only included correlations greater than 0.5, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.
+Each circle is a forum, and links are correlations. In this graph, I only included correlations greater than 0.5, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.
 
 Markov Clustering (MCL) is one way to group the forums algorithmically. You can read about it [here](http://micans.org/mcl/), it's fascinating. Basically, you provide a graph with edge weights, and the algorithm manipulates the graph so that each vertex "clusters" around a single other vertex -- possibly itself. There are two parameters, e and r, which control how large the clusters are. You can see the results of the clustering by selecting "Markov clusters" under "Color by..."
 
