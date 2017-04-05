@@ -7,41 +7,23 @@
   <title></title>
   <style type="text/css">code{white-space: pre;}</style>
   <style type="text/css">
-div.sourceCode { overflow-x: auto; }
 table.sourceCode, tr.sourceCode, td.lineNumbers, td.sourceCode {
   margin: 0; padding: 0; vertical-align: baseline; border: none; }
 table.sourceCode { width: 100%; line-height: 100%; }
 td.lineNumbers { text-align: right; padding-right: 4px; padding-left: 4px; color: #aaaaaa; border-right: 1px solid #aaaaaa; }
 td.sourceCode { padding-left: 5px; }
-code > span.kw { color: #007020; font-weight: bold; } /* Keyword */
-code > span.dt { color: #902000; } /* DataType */
-code > span.dv { color: #40a070; } /* DecVal */
-code > span.bn { color: #40a070; } /* BaseN */
-code > span.fl { color: #40a070; } /* Float */
-code > span.ch { color: #4070a0; } /* Char */
-code > span.st { color: #4070a0; } /* String */
-code > span.co { color: #60a0b0; font-style: italic; } /* Comment */
-code > span.ot { color: #007020; } /* Other */
-code > span.al { color: #ff0000; font-weight: bold; } /* Alert */
-code > span.fu { color: #06287e; } /* Function */
-code > span.er { color: #ff0000; font-weight: bold; } /* Error */
-code > span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
-code > span.cn { color: #880000; } /* Constant */
-code > span.sc { color: #4070a0; } /* SpecialChar */
-code > span.vs { color: #4070a0; } /* VerbatimString */
-code > span.ss { color: #bb6688; } /* SpecialString */
-code > span.im { } /* Import */
-code > span.va { color: #19177c; } /* Variable */
-code > span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
-code > span.op { color: #666666; } /* Operator */
-code > span.bu { } /* BuiltIn */
-code > span.ex { } /* Extension */
-code > span.pp { color: #bc7a00; } /* Preprocessor */
-code > span.at { color: #7d9029; } /* Attribute */
-code > span.do { color: #ba2121; font-style: italic; } /* Documentation */
-code > span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
-code > span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
-code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code > span.kw { color: #007020; font-weight: bold; }
+code > span.dt { color: #902000; }
+code > span.dv { color: #40a070; }
+code > span.bn { color: #40a070; }
+code > span.fl { color: #40a070; }
+code > span.ch { color: #4070a0; }
+code > span.st { color: #4070a0; }
+code > span.co { color: #60a0b0; font-style: italic; }
+code > span.ot { color: #007020; }
+code > span.al { color: #ff0000; font-weight: bold; }
+code > span.fu { color: #06287e; }
+code > span.er { color: #ff0000; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -60,6 +42,7 @@ src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/js/bootstrap.min.js
 integrity="sha384-vBWWzlZJ8ea9aCX4pEW3rVHjgjt7zpkNpZk+02D9phzyeVkE+jo0ieGizqPLForn"
 crossorigin="anonymous"></script>
 <script type="text/javascript" src="topic-vis.js"></script>
+
 <h1 id="mapping-the-disqus-universe-part-1">Mapping the Disqus Universe, Part 1</h1>
 <p>Disqus is a comment service for websites. You've probably seen their ubiquitous little speech bubble around the web; maybe you even have an account. The company powers sites like The Atlantic, Rolling Stone, People, and Breitbart (although only three of those are advertised on their website). According to their literature, they serve 2 billion monthly unique users and 50 million comments per month from 196 countries. Disqus calls itself &quot;the world's largest first-party data set.&quot;</p>
 <p>Recently, I got curious about how users from various parts of their network interact with each other. Luckily, they have a fantastic, free public API; it took me about 5 minutes to get a private key and start pulling down data. Here's what I did and what I found.</p>
@@ -69,15 +52,17 @@ crossorigin="anonymous"></script>
 <p class="caption">
 A sample Disqus profile page
 </p>
+
+
 <p><em>A note on privacy</em>: I was interested in trends across Disqus forums, not with the habits of any individual user. In this post I won't call out anyone by name, real or digital, and I'll keep direct quotes to a minimum. All the information I've pulled is publically available, both via the Disqus API and in comments sections around the web. Nevertheless, I've downloaded several hundred megabytes of user data. Time and again, <a href="https://arxiv.org/pdf/0903.3276.pdf">research</a> <a href="https://www.media.mit.edu/research/highlights/unique-shopping-mall-reidentifiability-credit-card-metadata">has</a> <a href="https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf">shown</a> that a collection of seemingly innocuous data points about a person can be used to reveal tremendous amounts of information, and I don't want to dox anyone. I encourage any concerned Disqus users to <a href="https://help.disqus.com/customer/portal/articles/1197204-making-your-activity-private">make their profiles private</a> in order to make it harder (though <a href="https://pdfs.semanticscholar.org/5697/02d3f854ecd55d3877d2b6cb45292aa7ae29.pdf">not impossible</a>) for people like me to snoop.</p>
 <p>So, into the data. Most of the data gathered for this post are from the <a href="https://disqus.com/api/docs/forums/listMostActiveUsers/"><code>forum.listMostActiveUsers</code></a> and <a href="https://disqus.com/api/docs/users/listMostActiveForums/"><code>user.listMostActiveForums</code></a> endpoints. In Disqus jargon, a &quot;forum&quot; is more or less equivalent to a site, comments on one article are grouped in a &quot;thread,&quot; and each comment is a &quot;post.&quot; <code>listMostActiveUsers</code> gives a list of a few hundred top users for a particular forum. For each of those, I called <code>listMostActiveForums</code>, which returns a list of the forums that a particular user frequents most. By doing so, I could generate a vector for each site showing which other sites its top users visited most. For example, here's the number of the Atlantic's top users (349) for whom each site is a &quot;top forum&quot;:</p>
-<div class="sourceCode"><pre class="sourceCode python"><code class="sourceCode python">outgoing_links[<span class="st">&quot;The Atlantic&quot;</span>] <span class="op">=</span> {
+<pre class="sourceCode python"><code class="sourceCode python">outgoing_links[<span class="st">&quot;The Atlantic&quot;</span>] = {
 <span class="st">&quot;The Hill&quot;</span>: <span class="dv">149</span>, 
 <span class="co">&quot;Bloomberg View&quot;</span>: <span class="dv">140</span>, 
 <span class="co">&quot;Mother Jones&quot;</span>: <span class="dv">122</span>, 
 <span class="co">&quot;Breitbart News Network&quot;</span>: <span class="dv">104</span>, 
 ...
-}</code></pre></div>
+}</code></pre>
 <p>Several thousand forums are referenced in the full vector, most of them by just one user. The full dataset I've collected has vectors like this for 444 different forums.</p>
 <p>If we normalize these vectors by the number of top users for each forum, we can compare how their users interact with other popular forums:</p>
 <table>
@@ -113,6 +98,7 @@ A sample Disqus profile page
 <p class="caption">
 What fraction of top users from forum A (vertical axis) frequent forum B (horizontal)?
 </p>
+
 <p>Right off the bat, there's some interesting data. A bigger portion of The Atlantic's top users frequent the conservative stalwart <a href="http://www.nationalreview.com/">National Review</a> than do <a href="http://www.breitbart.com/">Breitbart</a>'s. Almost two-thirds of Breitbart's top users frequent Alex Jones' <a href="https://www.infowars.com/">Infowars</a>. And <a href="http://thehill.com/">The Hill</a> seems to be popular with everyone.</p>
 <p>That's neat, but it's tough to interpret. I found some forums' top users were rather promiscuous, and would all frequent dozens of other sites. Other forums attracted an audience with more exclusive taste. And just because the top users of The Atlantic also visit Breitbart doesn't mean the inverse is true; all of Brietbart's top users might stay away from that liberal rag.</p>
 <h3 id="correlations">Correlations</h3>
@@ -161,6 +147,7 @@ What fraction of top users from forum A (vertical axis) frequent forum B (horizo
 <p class="caption">
 Example correlations between user cross-pollination vectors on the top 500 most-referenced forums
 </p>
+
 <p>Cool! That... kind of makes sense. As a news site, The Atlantic is similar to both Breitbart and The Hill, but probably more similar to The Hill. And <a href="http://avclub.com/">The AV Club</a> is not that similar to any of them, but its left-leaning audience is probably most similar to The Atlantic's.</p>
 <p>Disqus forums are labeled with one of a few categories, like &quot;News,&quot; &quot;Sports,&quot; and &quot;Business.&quot; Most of the sites I pulled data for are news- or politics-related, and those tend to correlate highly with each other in spite of ideological differences. Forums from under-represented categories, like Entertainment and Technology, correlate less strongly with anything (but more strongly with forums in their own category). It might be worthwile to generate correlation matrices on samples weighted by category.</p>
 <p>The numbers are more meaningful when compared against a specific forum than they are globally. The Atlantic correlates with Breitbart (0.57), but 154 other forums correlate with Breitbart more strongly; likewise, 167 forums are more correlated with The Atlantic. Meanwhile, the top correlation with The AV Club is <a href="http://tomandlorenzo.com/">Tom and Lorenzo</a> at 0.58.</p>
@@ -171,9 +158,11 @@ Example correlations between user cross-pollination vectors on the top 500 most-
 </div>
 </div>
 <script type="text/javascript" src="corr_matrix.js"></script>
+
 <p class="caption">
 Correlation matrix adapted from Karl Broman's <a href="https://github.com/kbroman/d3examples/tree/master/corr_w_scatter">example</a>
 </p>
+
 <p>The forums here are sorted by category, with Disqus Channels at the top left and News in the bottom-right quadrant.</p>
 <h3 id="clustering">Clustering</h3>
 <p>Let's see if we can make more sense of the network.</p>
@@ -182,73 +171,87 @@ Correlation matrix adapted from Karl Broman's <a href="https://github.com/kbroma
 Click on a circle and drag it around to see how the forums interact.
 </p>
 <div class="container">
-<div class="row">
-<pre><code>&lt;svg id=&quot;force-directed&quot; width=&quot;1280&quot; height=&quot;720&quot; class=&quot;img-fluid&quot; alt=&quot;Responsive image&quot;&gt;&lt;/svg&gt;</code></pre>
-</div>
-<div class="row info-header">
-<pre><code>&lt;div class=&quot;col&quot;&gt;
-  &lt;h4 id=&quot;forum-name&quot;&gt;Forum&lt;/h4&gt;
-&lt;/div&gt;
-&lt;div class=&quot;col-3&quot;&gt;
-  &lt;div class=&quot;row&quot;&gt;
-    &lt;div class=&quot;dropdown&quot;&gt;
-      &lt;button class=&quot;btn btn-primary dropdown-toggle&quot; type=&quot;button&quot;</code></pre>
-data-toggle=&quot;dropdown&quot;&gt;Color by...<span class="caret"></span>
+  <div class="row">
+    <svg id="force-directed" width="1280" height="720" class="img-fluid" alt="Responsive image"></svg>
+  </div>
+  <div class="row info-header">
+    <div class="col">
+      <h4 id="forum-name">
+Forum
+</h4>
+    </div>
+    <div class="col-3">
+      <div class="row">
+        <div class="dropdown">
+          <button class="btn btn-primary dropdown-toggle" type="button"
+  data-toggle="dropdown">
+Color by...<span class="caret"></span>
 </button>
-<pre><code>      &lt;ul class=&quot;dropdown-menu&quot; id=&#39;coloring-select&#39;&gt;
-        &lt;li&gt;&lt;a href=&quot;#&quot; value=&#39;category&#39;&gt;Category&lt;/a&gt;&lt;/li&gt;
-        &lt;li&gt;&lt;a href=&quot;#&quot; value=&#39;group&#39;&gt;MCL (e=2, r=3)&lt;/a&gt;&lt;/li&gt;
-        &lt;li&gt;&lt;a href=&quot;#&quot; value=&#39;activity&#39;&gt;Activity&lt;/a&gt;&lt;/li&gt;
-      &lt;/ul&gt;
-    &lt;/div&gt;
-  &lt;/div&gt;
-&lt;/div&gt;</code></pre>
-</div>
-<div class="row info-container">
-<pre><code>&lt;div class=&quot;col-5&quot;&gt;
-  &lt;ul class=&quot;list-group&quot; id=&quot;details-ul&quot;&gt;
-    &lt;li id=&quot;detail-url&quot;&gt;Details&lt;/li&gt;
-    &lt;li id=&quot;detail-category&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;detail-cluster&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;detail-activity&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;detail-connectivity&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;detail-description&quot;&gt;&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/div&gt;
-&lt;div class=&quot;col-3&quot;&gt;
-  &lt;b id=&quot;correlations-title&quot;&gt;Correlates with&lt;/b&gt;
-  &lt;ol class=&quot;list-group&quot; id=&quot;correlate-ol&quot;&gt;
-    &lt;li id=&quot;correlation-0&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;correlation-1&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;correlation-2&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;correlation-3&quot;&gt;&lt;/li&gt;
-    &lt;li id=&quot;correlation-4&quot;&gt;&lt;/li&gt;
-  &lt;/ol&gt;
-&lt;/div&gt;
-&lt;div class=&quot;col&quot;&gt;
-  &lt;b id=&quot;topics-title&quot;&gt;Top topics&lt;/b&gt;
-  &lt;ol class=&quot;list-group&quot; id=&quot;topics-ol&quot;&gt;
-    &lt;li id=&quot;topic-0&quot; class=&quot;row&quot;&gt;
-      &lt;div class=&quot;col-2 topic-score&quot;&gt;&lt;/div&gt;
-      &lt;div class=&quot;col topic-name&quot;&gt;&lt;/div&gt;
-    &lt;/li&gt;
-    &lt;li id=&quot;topic-1&quot; class=&quot;row&quot;&gt;
-      &lt;div class=&quot;col-2 topic-score&quot;&gt;&lt;/div&gt;
-      &lt;div class=&quot;col topic-name&quot;&gt;&lt;/div&gt;
-    &lt;/li&gt;
-    &lt;li id=&quot;topic-2&quot; class=&quot;row&quot;&gt;
-      &lt;div class=&quot;col-2 topic-score&quot;&gt;&lt;/div&gt;
-      &lt;div class=&quot;col topic-name&quot;&gt;&lt;/div&gt;
-    &lt;/li&gt;
-  &lt;/ol&gt;
-&lt;/div&gt;</code></pre>
-</div>
+          <ul class="dropdown-menu" id='coloring-select'>
+            <li>
+<a href="#" value='category'>Category</a>
+</li>
+            <li>
+<a href="#" value='group'>MCL (e=2, r=3)</a>
+</li>
+            <li>
+<a href="#" value='activity'>Activity</a>
+</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="row info-container">
+    <div class="col-5">
+      <ul class="list-group" id="details-ul">
+        <li id="detail-url">
+Details
+</li>
+        <li id="detail-category"></li>
+        <li id="detail-cluster"></li>
+        <li id="detail-activity"></li>
+        <li id="detail-connectivity"></li>
+        <li id="detail-description"></li>
+      </ul>
+    </div>
+    <div class="col-3">
+      
+<b id="correlations-title">Correlates with</b>
+<ol class="list-group" id="correlate-ol">
+        <li id="correlation-0"></li>
+        <li id="correlation-1"></li>
+        <li id="correlation-2"></li>
+        <li id="correlation-3"></li>
+        <li id="correlation-4"></li>
+      </ol>
+    </div>
+    <div class="col">
+      
+<b id="topics-title">Top topics</b>
+<ol class="list-group" id="topics-ol">
+        <li id="topic-0" class="row">
+          <div class="col-2 topic-score"></div>
+          <div class="col topic-name"></div>
+        </li>
+        <li id="topic-1" class="row">
+          <div class="col-2 topic-score"></div>
+          <div class="col topic-name"></div>
+        </li>
+        <li id="topic-2" class="row">
+          <div class="col-2 topic-score"></div>
+          <div class="col topic-name"></div>
+        </li>
+      </ol>
+    </div>
+  </div>
 </div>
 <p class="caption">
 Click on the &quot;Category&quot; and &quot;Clusters With&quot; links to highlight groups in the graph.
 </p>
 <script src="d3-vis.js"></script>
 <script src="interactive-interface.js"></script>
+
 <p>Each circle is a forum, and links are correlations. In this graph, I only included correlations greater than 0.5, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.</p>
 <p>Markov Clustering (MCL) is one way to group the forums algorithmically. You can read about it <a href="http://micans.org/mcl/">here</a>, it's fascinating. Basically, you provide a graph with edge weights, and the algorithm manipulates the graph so that each vertex &quot;clusters&quot; around a single other vertex -- possibly itself. There are two parameters, e and r, which control how large the clusters are. You can see the results of the clustering by selecting &quot;Markov clusters&quot; under &quot;Color by...&quot;</p>
 <p>What's striking about the graph is how tight some of the regions are. Again, the &quot;News&quot; sites tend to cluster together in the middle, but that's not the whole story. If you scan that big region in the middle, you'll notice a lot of &quot;Culture,&quot; &quot;Business,&quot; and some &quot;Entertainment&quot; as well. And check out the region around Breitbart (one of the biggest circles, towards the top of the graph). There are dozens of sites that correlate quite strongly with each other -- the conservative blogosphere.</p>
@@ -261,6 +264,7 @@ Click on the &quot;Category&quot; and &quot;Clusters With&quot; links to highlig
 <p class="caption">
 Fifty thousand people used to post here. Now it's a ghost town.
 </p>
+
 <p>Some of them, like Politico and The National Review, have switched over to Facebook-powered comment machinery. Others, like CNN and Bloomberg, appear to have ditched comments altogether. It's possible this is related to hate speech issues Disqus has had in the past (and has recently <a href="https://blog.disqus.com/our-commitment-to-fighting-hate-speech">tried to address</a>), or maybe it's part of <a href="http://www.breitbart.com/tech/2015/10/27/the-lefts-war-on-comment-sections/">the Left's war on comments</a>... I haven't delved deeper, but it's interesting either way.</p>
 <p>I hope to have more details about forum activity in the next installment.</p>
 <h3 id="topics">Topics</h3>
@@ -268,23 +272,23 @@ Fifty thousand people used to post here. Now it's a ghost town.
 <p>For each forum with enough activity, I pulled down raw text from that forum's most active comment threads. I treated each thread like a document and trained a topic model on the set of all threads. I used <a href="https://en.wikipedia.org/wiki/Non-negative_matrix_factorization">Non-negative Matrix Factorization</a> to do the modeling, and generated forty topics in all. The rest of the details are beyond the scope of this post, but all the code is on <a href="https://github.com/bcyphers/disqus-data">github</a>.</p>
 <p>In the graphic above, the &quot;Top topics&quot; listed for each forum are the most common from all that forum's threads. The score next to each topic is the average &quot;strength&quot; of each topic in all of that forum's documents. You should notice a few topics dominating over a variety of forums: in his first thirty days, people talked a lot about Trump and the government.</p>
 <p>The hastily-built chart below shows each of the forty topics, each represented by a rectangle and weighted by how common it is. Hover over each topic bar to see which forums talk about it the most. And please take all of this with a block of salt: I'm very new to NLP and may have made some grave statistical errors along the way. Don't use any of this data as &quot;evidence&quot; to support anything consequential.</p>
-<div id="topics" class="container">
+<div class="container" id="topics">
 <div class="row">
-<div id="topic-graph" class="col-4">
-
-</div>
-<div id="topic-list" class="col">
+ <div class="col-4" id="topic-graph">
+ </div>
+ <div class="col" id="topic-list">
+  
 Top forums for topic:
-<h5 id="topic-name">
-</h5>
-<ol class="list-group">
-</ol>
-</div>
+<h5 id="topic-name"></h5>
+  <ol class="list-group">
+  </ol>
+ </div>
 </div>
 </div>
 <p class="caption">
 Hover over a topic to see which forums talked about it the most.
 </p>
+
 <p>With that said, we have some pretty interesting results.</p>
 <p>First, check out the top topics for each site in the network graph above. At <a href="http://takimag.com">Taki's Mag</a>, which flirts with white nationalism, comment threads were mostly about &quot;soros, government, violence&quot; and race. At Occidental Dissent, which is <a href="http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/">openly fascist</a>, the dominant topic was &quot;israel, jews, jewish, anti, land.&quot; <a href="http://www.wired.com/">Wired</a> readers talk about &quot;science, climate, evidence&quot; more than anything else. And check out <a href="http://packers.com/">Packers.com</a>: it looks like sports chat wasn't common enough to earn its own topic, but the model associated the both the TV-show related &quot;season, shows, new...&quot; and the video game-related &quot;game, games, play...&quot; with the Pack.</p>
 <p>Now take a look at the top topics overall. The most common topic is the generic-sounding &quot;really, way, going, make, say,&quot; but the second-most common is about Trump and the election. You'll notice topics on trending news stories from that month, like <a href="https://www.washingtonpost.com/world/national-security/national-security-adviser-flynn-discussed-sanctions-with-russian-ambassador-despite-denials-officials-say/2017/02/09/f85b29d6-ee11-11e6-b4ff-ac2cf509efe5_story.html">&quot;flynn, russian, administration, pence, security&quot;</a> and <a href="http://www.cbsnews.com/news/milo-yiannopoulos-says-he-was-not-supporting-pedophilia/">&quot;milo, speech, gay, breitbart, right&quot;</a>. The two forums talking most about &quot;black, white, racist...&quot; were the black-focused <a href="http://www.clutchmagonline.com/">Clutch Magazine</a> and the white-supremicist <a href="https://www.amren.com/">American Renaissance</a>. Talking most about &quot;trump, obama, president...&quot; were political blogs like <a href="http://thehill.com/">The Hill</a>, <a href="http://therightscoop.com/">The Right Scoop</a>, and... <a href="http://www.tmz.com/">TMZ</a>?</p>
@@ -292,7 +296,7 @@ Hover over a topic to see which forums talked about it the most.
 <p>There's a lot more that could be done with this data, but for the sake of brevity and time I'm ending here. I'm still actively downloading raw post text and pulling users for new forums. Next time, I'll delve more into the content of the comments sections of each forum. I've got a slew of NLP-related ideas that I'll try to tackle in a coherent way. If you have any questions, corrections or suggestions, please let me know! <script type="text/javascript">
 <!--
 h='&#x6d;&#x69;&#116;&#46;&#x65;&#100;&#x75;';a='&#64;';n='&#98;&#x63;&#x79;&#112;&#104;&#x65;&#114;&#x73;';e=n+a+h;
-document.write('<a h'+'ref'+'="ma'+'ilto'+':'+e+'" clas'+'s="em' + 'ail">'+e+'<\/'+'a'+'>');
+document.write('<a h'+'ref'+'="ma'+'ilto'+':'+e+'">'+e+'<\/'+'a'+'>');
 // -->
 </script><noscript>&#98;&#x63;&#x79;&#112;&#104;&#x65;&#114;&#x73;&#32;&#x61;&#116;&#32;&#x6d;&#x69;&#116;&#32;&#100;&#x6f;&#116;&#32;&#x65;&#100;&#x75;</noscript></p>
 </body>
