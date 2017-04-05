@@ -192,7 +192,8 @@ For each forum with enough activity, I pulled down raw text from that forum's mo
 
 In the graphic above, the "Top topics" listed for each forum are the most common from all that forum's threads. The score next to each topic is the average "strength" of each topic in all of that forum's documents. You should notice a few topics dominating over a variety of forums: in his first thirty days, people talked a lot about Trump and the government.
 
-The chart below shows each of the forty topics, weighted by how common they are.  Hover over each topic to see which forums talk about it the most.
+The chart below shows each of the forty topics, weighted by how common they are.
+Hover over each topic bar to see which forums talk about it the most.
 
 <div class="container" id="topics">
 <div class="row">
@@ -208,9 +209,13 @@ The chart below shows each of the forty topics, weighted by how common they are.
 
 Take all of this with a block of salt: I'm very new to NLP, and may have made some grave statistical errors along the way. Please don't use any of this data as "evidence" to support anything consequential.
 
-With that said, there's some really interesting stuff. World Star commenters talk about race much more than average, and music isn't even in the top 3. Other sites correlated with World Star have a similar pattern. Android Authority, predictably, talks about "phone google data" much more than normal, but also about "china south war north military." At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about whites, blacks, racism, Milo, and Israel. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "california state illegals states union."
+With that said, we have some pretty interesting results. The two forums talking most about "black, white, racist..." are the black-focused [Clutch Magazine](http://www.clutchmagonline.com/) and the white-supremicist [American Renaissance](https://www.amren.com/). Talking most about "trump, obama, president..." are political blogs like [The Hill](http://thehill.com/), [The Right Scoop](http://therightscoop.com/), and... [TMZ](http://www.tmz.com/)?
 
-Looking at topics on news sites also let us guage the important news cycles for the sample time period -- the first 30 days of Trump's presidency. Across the ideological spectrum, "milo breitbart sexual speech defend" was a trending topic, as was "news media cnn press fox" and "trump president obama donald hillary." Left-leaning sites tended to talk more about "flynn administration russian russia trump" than right-leaning ones. A topic about "soros george america money paid" was present almost exclusively on conservative forums.
+At [Taki's Mag](http://takimag.com), which flirts with white nationalism, comment threads were mostly about race, Milo, and Israel. At Occidental Dissent, which is [openly fascist](http://www.occidentaldissent.com/2017/03/23/the-philosophy-of-fascism/), the dominant topic was "california, state, illegals, states, union."
+
+[Android Authority](http://www.androidauthority.com/), predictably, talks about "phone google data" much more than normal, but also about "china, south, war, north, military." 
+
+Looking at topics on news sites also give us a slice of the news cycle for the sample time period -- the first 30 days of Trump's presidency. "sessions, russian, russians, campaign, senator" and "milo, speech, gay, breitbart, right" were both trending topics. 
 
 ### Next Steps
 
