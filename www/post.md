@@ -205,9 +205,10 @@ The hastily-built chart below shows each of the forty topics, each represented b
  <div class="col-4" id="topic-graph">
  </div>
  <div class="col" id="topic-list">
-   <b id="topics-title">Details</b>
-   <ol class="list-group">
-   </ol>
+  Top forums for topic:
+  <h5 id="topic-name"></h5>
+  <ol class="list-group">
+  </ol>
  </div>
 </div>
 </div>
