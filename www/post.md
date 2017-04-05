@@ -167,7 +167,7 @@ Click  on the "Category" and "Clusters With" links to highlight groups in the gr
 <script src="d3-vis.js"></script>
 <script src="interactive-interface.js"></script>
 
-Each circle is a forum, and links are correlations. In this graph, I only included correlations greater than 0.5, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.
+Each circle is a forum, and links are correlations. Hover over or click on forums to see more information, and scroll to zoom. In this graph, I only included correlations greater than 0.5, and only the top five correlations for each forum. Link strength is based on correlation strength. By default, the color of each circle corresponds to its Disqus category.
 
 Markov Clustering (MCL) is one way to group the forums algorithmically. You can read about it [here](http://micans.org/mcl/), it's fascinating. Basically, you provide a graph with edge weights, and the algorithm manipulates the graph so that each vertex "clusters" around a single other vertex -- possibly itself. There are two parameters, e and r, which control how large the clusters are. You can see the results of the clustering by selecting "Markov clusters" under "Color by..."
 
