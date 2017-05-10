@@ -231,18 +231,18 @@ $(document).ready(function(){
     var d3Ready = false,
         detailsReady = false;
 
-    $.getJSON("data/correlations.json", function(json){ correlations = json; });
+    $.getJSON("data/correlations-z.json", function(json){ correlations = json; });
     $.getJSON("data/topics.json", function(json) { 
         topics = json; 
         buildTopicGraph(topics);
     });
-    $.getJSON("data/details.json", function(json) { 
+    $.getJSON("data/details-z.json", function(json) { 
         details = json; 
         detailsReady = true;
         finalSetup();
     });
     $.getJSON("data/force-graph-init.json", function(json) {
-      forceGraphSimulate("data/force-graph-4-05.json", d3Callback, json);
+      forceGraphSimulate("data/force-graph-z.json", d3Callback, json);
     });
 
     function finalSetup() {

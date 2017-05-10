@@ -158,6 +158,12 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
         print "done"
 
     cor = get_correlations(df)
+    all_cor = []
+    for i in range(len(cor.index)):
+        for j in range(i):
+            all_cor.append(cor.ix[i, j])
+    all_cor.sort(reverse=True)
+
     nodes = []
     links = []
 
@@ -185,7 +191,7 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
             f2_top_5 = sorted(cor[f2])[-5]
 
             # only include links of sufficient strength, or links in the top 5
-            # cor[f2][f1] > 0.9 or
+            #if cor[f2][f1] > all_cor[len(nodes) * 3]:
             if cor[f2][f1] > cor_cutoff and (cor[f2][f1] >= f1_top_5 or
                                              cor[f2][f1] >= f2_top_5):
                 # ordering doesn't really matter here, the matrix is symmetrical
