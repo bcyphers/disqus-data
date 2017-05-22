@@ -152,9 +152,10 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
 
     # normalize columns
     for c in df.columns:
-        # "center" te
         if col_norm == 'center':
             df[c] -= df[c].mean()
+        elif col_norm == 'z':
+            df[c] = (df[c] - df[c].mean()) - df[c].std(ddof=0)
         elif col_norm == 'l1':
             df[c] /= sum(df[c])
         elif col_norm == 'l2':

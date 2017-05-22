@@ -1,6 +1,7 @@
 import awis
 import csv
 import dateutil.parser
+import datetime
 import json
 import os
 import pdb
@@ -12,7 +13,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from datetime import datetime
 from disqusapi import DisqusAPI, APIError, FormattingError
 from collections import defaultdict
 from numpy import linalg
@@ -90,6 +90,11 @@ class DataPuller(object):
         self._active_forum_threads = None
         self._thread_posts = None
         self._forum_details = None
+
+    ###########################################################################
+    # All these properties are this way so that big json files are only loaded
+    # on demand
+    ###########################################################################
 
     @property
     def user_to_forums(self):
@@ -322,15 +327,19 @@ class DataPuller(object):
                                    interval='30d', limit=100)
         except APIError as err:
             print err
+            # API request limit: exit
+            if int(err.code) == 13:
+                print 'exiting'
+                sys.exit(0)
             return
         except FormattingError as err:
             print err
             return
 
         # find the most recent, popular post
-        last_time = datetime(2007, 1, 1)
+        last_time = datetime.datetime(2007, 1, 1)
         post_time = lambda r: dateutil.parser.parse(r['createdAt'])
-        cutoff_time = datetime(2017, 1, 1)
+        cutoff_time = datetime.datetime(2017, 1, 1)
         for r in res:
             last_time = max(last_time, post_time(r))
 
@@ -339,15 +348,17 @@ class DataPuller(object):
         recent_threads = [r for r in res if post_time(r) > cutoff_time]
         if recent_threads:
             self.active_forum_threads[forum] = {t['id']: t for t in recent_threads}
+            save_json(self.active_forum_threads[forum],
+                      'active_forum_threads_' + forum)
 
         num_recent_posts = sum(r['postsInInterval'] for r in recent_threads)
         self.forum_details[forum]['posts30d'] = num_recent_posts
+        self.forum_details[forum]['posts30dEnd'] = datetime.date.today().isoformat()
 
         print 'retrieved', len(recent_threads), 'threads with', \
             num_recent_posts, 'posts'
         print 'saving data...'
         save_json(self.forum_details, 'forum_details')
-        save_json(self.active_forum_threads, 'active_forum_threads')
         print 'done.'
 
     def pull_forum_details(self):
@@ -364,8 +375,17 @@ class DataPuller(object):
         forums = sorted(self.get_weights().items(), key=lambda i: -i[1])
         for f, w in forums:
             if f not in self.forum_details:
-                print 'requesting data for forum', f
-                res = self.api.request('forums.details', forum=f)
+                print 'requesting data for forum', f, 'with', w, 'references'
+                try:
+                    res = self.api.request('forums.details', forum=f)
+                except APIError as err:
+                    if int(err.code) == 13:
+                        print 'API limit exceeded: exiting'
+                        return
+                    # Invalid argument: remove thread
+                    if int(err.code) == 2:
+                       continue
+
                 self.forum_details[f] = res
                 print 'saving forum data...'
                 save_json(self.forum_details, 'forum_details')
@@ -397,6 +417,8 @@ class DataPuller(object):
 
     def pull_all_forum_activity(self):
         for f, d in self.forum_details.items():
+            if 'lastPost' in d and 'posts30d' in d:
+                continue
             self.pull_forum_activity(f)
 
     ###########################################################################
@@ -492,7 +514,7 @@ class DataPuller(object):
     def pull_forum_threads(self, forum):
         if forum not in self.all_forum_threads:
             # the first instant of President Trump's tenure
-            start_time = datetime(2017, 1, 20, 17, 0, 0)
+            start_time = datetime.datetime(2017, 1, 20, 17, 0, 0)
             self.all_forum_threads[forum] = {}
             total_posts = 0
         else:
@@ -501,7 +523,7 @@ class DataPuller(object):
             start_time = max(times)
             total_posts = len(self.all_forum_threads[forum])
 
-        end_time = datetime(2017, 2, 20, 17, 0, 0)
+        end_time = datetime.datetime(2017, 2, 20, 17, 0, 0)
         last_time = start_time
 
         print 'pulling all threads for forum', forum
@@ -554,7 +576,7 @@ class DataPuller(object):
     def pull_all_threads(self, forums):
         print "pulling data from", len(forums), "forums"
 
-        cutoff_time = datetime(2017, 1, 1)
+        cutoff_time = datetime.datetime(2017, 1, 1)
 
         # loop indefinitely, gathering data
         for forum in forums:
@@ -659,7 +681,7 @@ class DataPuller(object):
 
 
 def rank_forums(data):
-    cutoff_time = datetime(2017, 1, 1)
+    cutoff_time = datetime.datetime(2017, 1, 1)
     def alive_str(d):
         if 'lastPost' not in d:
             return colored('no data', 'cyan')
@@ -693,9 +715,9 @@ if __name__ == '__main__':
     puller = DataPuller(sys.argv[1])
 
     #puller.pull_all_forum_users()
-    #puller.pull_all_forum_activity()
+    puller.pull_all_forum_activity()
     #puller.pull_all_user_forums(200)
     #forums = [l.strip() for l in open(args[2])]
     #puller.pull_all_threads(forums)
-    puller.pull_all_posts(n_threads=50)
-    #puller.pull_forum_details()
+    #puller.pull_all_posts(n_threads=50)
+    puller.pull_forum_details()
