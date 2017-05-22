@@ -245,6 +245,7 @@ $(document).ready(function(){
       forceGraphSimulate("data/force-graph-4-05.json", d3Callback, json);
     });
 
+    //forceGraphSimulate("data/05-22/force-graph.json", d3Callback, null);
     function finalSetup() {
         if (detailsReady && d3Ready) {
             recolorCircles("category");
