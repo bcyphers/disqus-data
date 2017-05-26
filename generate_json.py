@@ -47,7 +47,8 @@ def generate_details(data, df=None, path='www/data/details.json', e=2, r=3, **kw
     out = {}
 
     print 'dumping json...'
-    for f, details in data.forum_details.iteritems():
+    forums = [i for i in data.forum_details.iteritems() if i[0] in df.index]
+    for f, details in forums:
         act = activity.get(f)
         if f in edges:
             out_links = [u for u in forum_to_users[f] if u in data.user_to_forums]
@@ -69,6 +70,8 @@ def generate_details(data, df=None, path='www/data/details.json', e=2, r=3, **kw
 
     with open(path, 'w') as f:
         json.dump(out, f)
+
+    print 'done'
 
     return df
 

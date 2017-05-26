@@ -1,3 +1,4 @@
+import argparse
 import awis
 import csv
 import dateutil.parser
@@ -9,9 +10,6 @@ import re
 import shutil
 import sys
 import time
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 
 from disqusapi import DisqusAPI, APIError, FormattingError
 from collections import defaultdict
@@ -37,7 +35,14 @@ DEDUP = {
 }
 
 # TODO
-DATA_PATH = '/home/bcyphers/projects/disqus/disqus-data/data/'
+DATA_PATH = os.path.dirname(os.path.abspath(__file__)) + '/data/'
+print DATA_PATH
+
+ap = argparse.ArgumentParser()
+ap.add_argument('keyfiles', type=str, nargs='+', help='path to api key file(s)')
+ap.add_argument('--data-path', type=str, default=DATA_PATH,
+                help='path to data directory')
+
 
 def save_json(data, name):
     path = DATA_PATH + name + '.json'
@@ -76,12 +81,7 @@ def load_json(name, default=None):
 
 
 class DataPuller(object):
-    def __init__(self, keyfile):
-        with open(keyfile) as kf:
-            key = kf.read().strip()
-
-        self.api = DisqusAPI(key, None)
-
+    def __init__(self):
         self._user_to_forums = None
         self._forum_to_users = None
         self._all_users = None
@@ -90,6 +90,13 @@ class DataPuller(object):
         self._active_forum_threads = None
         self._thread_posts = None
         self._forum_details = None
+
+    def load_key(self, keyfile):
+        """ Initialize a DisqusAPI handle """
+        with open(keyfile) as kf:
+            key = kf.read().strip()
+
+        self.api = DisqusAPI(key, None)
 
     ###########################################################################
     # All these properties are this way so that big json files are only loaded
@@ -201,7 +208,8 @@ class DataPuller(object):
         i = 0
         errs = 0
 
-        print 'trying to pull', min_users - len(users), 'more users for forum', forum
+        print 'trying to pull', min_users - len(users), \
+            'more users for forum', forum
         while len(users) < min_users:
             cursor = '%d:0:0' % (i * 100)
             try:
@@ -265,7 +273,8 @@ class DataPuller(object):
             to_go = min_users - with_data
 
             print
-            print 'pulling data for', to_go, 'users from forum', forum
+            print 'pulling data for', to_go, 'users from forum', forum, 'with',\
+                activity.get(forum), 'posts in 30 days'
 
             # for each of the most active users of this forum, find what forums
             # they're most active on
@@ -283,27 +292,36 @@ class DataPuller(object):
                         # user is private: remove them from the forum's list
                         print 'user id', uid, 'is private'
                         self.forum_to_users[forum].remove(uid)
-                    elif int(err.code) == 13:
-                        print 'API rate limit exceeded'
-                        self.save_exit()
                     else:
-                        raise err
+                        return int(err.code)
+                except FormattingError as err:
+                    print 'Could not parse response:'
+                    print err
+                    self.forum_to_users[forum].remove(uid)
 
             print 'saving user-forum data...'
             save_json(self.user_to_forums, 'user_to_forums')
+
+        return 0    # s'all good, man
 
     def pull_all_forum_users(self, min_users=1000):
         """
         Loop over forums and pull in active user lists for each one
         """
         activity = self.get_forum_activity()
+
+        # sort forums by 30 day activity
         forums = sorted(self.get_all_forums(), key=lambda i: -activity.get(i, 0))
         forums = [f for f in forums if f not in self.done_with]
 
         # loop over forums in order of most active
         for forum in forums:
-            print 'pulling most active users for forum', repr(forum)
-            self.forum_to_users[forum] = self.pull_users(forum, min_users)
+            print 'pulling most active users for forum', repr(forum), 'with', \
+                activity[forum], 'posts in 30 days'
+            try:
+                self.forum_to_users[forum] = self.pull_users(forum, min_users)
+            except APIError as err:
+                return int(err.code)
 
             print 'saving forum-user data...'
             save_json(self.forum_to_users, 'forum_to_users')
@@ -327,11 +345,11 @@ class DataPuller(object):
                                    interval='30d', limit=100)
         except APIError as err:
             print err
-            # API request limit: exit
-            if int(err.code) == 13:
-                print 'exiting'
-                sys.exit(0)
-            return
+            code = int(err.code)
+            if code == 22:
+                res = []
+            else:
+                return code
         except FormattingError as err:
             print err
             return
@@ -361,7 +379,7 @@ class DataPuller(object):
         save_json(self.forum_details, 'forum_details')
         print 'done.'
 
-    def pull_forum_details(self):
+    def pull_forum_details(self, num_forums=-1):
         # first, get all forums that are part of our graph
         for f in self.forum_to_users.keys():
             if f not in self.forum_details:
@@ -372,23 +390,32 @@ class DataPuller(object):
                 save_json(self.forum_details, 'forum_details')
 
         # start getting the rest
-        forums = sorted(self.get_weights().items(), key=lambda i: -i[1])
-        for f, w in forums:
+        items = [i for i in self.get_weights().items() if i[0] not in
+                 self.forum_details]
+        forums = sorted(items, key=lambda i: -i[1])
+        for f, w in forums[:num_forums]:
             if f not in self.forum_details:
                 print 'requesting data for forum', f, 'with', w, 'references'
                 try:
                     res = self.api.request('forums.details', forum=f)
                 except APIError as err:
                     if int(err.code) == 13:
-                        print 'API limit exceeded: exiting'
-                        return
+                        print 'API limit exceeded'
+                        return 13
                     # Invalid argument: remove thread
                     if int(err.code) == 2:
                        continue
+                except FormattingError as err:
+                    print err
+                    continue
 
                 self.forum_details[f] = res
                 print 'saving forum data...'
                 save_json(self.forum_details, 'forum_details')
+
+        # return 0 only if we've got details on every single forum
+        if num_forums > len(forums) or num_forums == -1:
+            return 0
 
     def pull_forum_alexa_ranks(self, keyfile):
         with open(keyfile) as f:
@@ -416,10 +443,19 @@ class DataPuller(object):
                 save_json(self.forum_details, 'forum_details')
 
     def pull_all_forum_activity(self):
-        for f, d in self.forum_details.items():
+        weights = self.get_weights()
+        items = sorted(self.forum_details.items(), key=lambda i:weights[i[0]],
+                       reverse=True)
+        for f, d in items:
             if 'lastPost' in d and 'posts30d' in d:
                 continue
-            self.pull_forum_activity(f)
+
+            code = self.pull_forum_activity(f)
+
+            # check if the API limit's been reached
+            if code == 13:
+                return 13
+
 
     ###########################################################################
     ##  Threads and posts  ####################################################
@@ -650,7 +686,7 @@ class DataPuller(object):
 
     # map forums to recent activity
     def get_forum_activity(self, dedup=False):
-        return {f: d['posts30d'] for f, d in self.forum_details.items()}
+        return {f: d.get('posts30d', 0) for f, d in self.forum_details.items()}
 
     def get_forum_threads(self):
         """
@@ -676,6 +712,8 @@ class DataPuller(object):
         for ftf in self.get_forum_edges(dedup=dedup).values():
             for f, v in ftf.items():
                 forums[f] += v / float(sum(ftf.values()))
+
+        print 'Found', len(forums), 'forums total'
 
         return forums
 
@@ -711,13 +749,37 @@ def rank_forums(data):
 
     #del activity, threads
 
-if __name__ == '__main__':
-    puller = DataPuller(sys.argv[1])
 
-    #puller.pull_all_forum_users()
-    puller.pull_all_forum_activity()
-    #puller.pull_all_user_forums(200)
-    #forums = [l.strip() for l in open(args[2])]
-    #puller.pull_all_threads(forums)
+def sleep_until_next_hour():
+        # sleep until the next hour
+        t = datetime.datetime.now()
+        next_time = datetime.datetime(t.year,t.month,t.day,(t.hour+1)%24,0)
+        print 'Sleeping until %s...' % next_time
+        time.sleep((next_time - t).seconds)
+
+
+if __name__ == '__main__':
+    args = ap.parse_args()
+    puller = DataPuller()
+    DATA_PATH = args.data_path
+
+    while True:
+        for keyfile in args.keyfiles:
+            puller.load_key(keyfile)
+            code = puller.pull_all_user_forums(400)
+            #puller.pull_all_forum_activity()
+            #code = puller.pull_forum_details(num_forums=1000)
+            if code == 0:
+                print "Received code 0: done!"
+                sys.exit(0)
+            if code == 13:
+                continue
+
+        # if we've hit the api limit, wait a while
+        if code == 13:
+            sleep_until_next_hour()
+
+    #puller.pull_forum_details()
+    #puller.pull_all_forum_activity()
+    #code = puller.pull_all_forum_users()
     #puller.pull_all_posts(n_threads=50)
-    puller.pull_forum_details()

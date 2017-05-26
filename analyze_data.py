@@ -30,9 +30,9 @@ from collect_data import *
 
 
 def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
-                      row_norm=None, col_norm=None, only_en=True, cutoff=1.5,
-                      weight_func='references', src_cats=None, tar_cats=None,
-                      sources=None, targets=None):
+                      row_norm=None, col_norm=None, only_en=True, no_channels=True,
+                      cutoff=1.5, weight_func='references', src_cats=None,
+                      tar_cats=None, sources=None, targets=None):
     """
     Convert the sparse representation that get_edges gives us into a dense
     (directed) transition matrix with normalized rows
@@ -47,6 +47,7 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
         the matrix. This should be tweaked in the future and is probably
         important to understanding the whole thing
     only_en (bool): if true, only allow english-language forums
+    no_channels (bool): if true, exclude channel forums
     cutoff (float): if a forum's outgoing links/person average is below this,
         don't include them
     src_cats (list[str]): if provided, only use forums from these categories as sources
@@ -86,8 +87,11 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
 
         # cull sources that arent the right type
         for f in all_sources[:]:
-            if only_en and data.forum_details[f]['language'] != 'en' or \
-                    src_cats and data.forum_details[f]['category'] not in src_cats:
+            if only_en and data.forum_details[f]['language'] != 'en':
+                all_sources.remove(f)
+            if src_cats and data.forum_details[f]['category'] not in src_cats:
+                all_sources.remove(f)
+            if no_channels and 'channel-' in f:
                 all_sources.remove(f)
 
         # cull sources that don't meet our cutoff
@@ -120,7 +124,8 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
                     # do category filtering if necessary
                     category = data.forum_details.get(t, {}).get('category', -1)
                     if tar_cats is None or category in tar_cats:
-                        weights[t] += float(count) / len(forum_out_links(f))
+                        # sort by number of sources that point to each target
+                        weights[t] += 1  #float(count) / len(forum_out_links(f))
 
             # take the top N most-mentioned targets
             targets = sorted(weights.keys(), key=lambda t: -weights[t])[:N]
