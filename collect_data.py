@@ -12,9 +12,12 @@ import sys
 import time
 
 from disqusapi import DisqusAPI, APIError, FormattingError
+from orm import Post
 from collections import defaultdict
 from numpy import linalg
 from termcolor import colored
+from sqlalchemy.engine.url import URL
+from sqlalchemy import create_engine, inspect
 
 
 DEDUP = {
@@ -34,15 +37,31 @@ DEDUP = {
     'mtonews': 'mtocom',
 }
 
-# TODO
+# TODO: this is ugly
 DATA_PATH = os.path.dirname(os.path.abspath(__file__)) + '/data/'
 print DATA_PATH
 
+# the first instant of President Trump's tenure
+TRUMP_START = datetime.datetime(2017, 1, 20, 17, 0, 0)
+
+# MySQL database info
+MYSQL_DB = {
+    'drivername': 'mysql',
+    'username': 'bcyphers',
+    'host': 'localhost',
+    'port': 3306,
+}
+
+# arguments for the script: more to come
 ap = argparse.ArgumentParser()
 ap.add_argument('keyfiles', type=str, nargs='+', help='path to api key file(s)')
 ap.add_argument('--data-path', type=str, default=DATA_PATH,
                 help='path to data directory')
 
+
+###############################################################################
+# Stateless utility functions for manipulating data
+###############################################################################
 
 def save_json(data, name):
     path = DATA_PATH + name + '.json'
@@ -80,7 +99,28 @@ def load_json(name, default=None):
     return data
 
 
+def add_month(dt):
+    """
+    add exactly one month to the datetime and return a new one
+    why there isn't a built in solution is beyond me
+    """
+    return (dt.replace(day=1) + datetime.timedelta(days=31)).replace(day=dt.day)
+
+
 class DataPuller(object):
+    """
+    Holds state for api and database connections and keeps data in memory
+
+    This is big and ugly and inefficient -- all the data should not be held in
+    memory like this unless absolutely necessary. I'm gradually moving form a
+    JSON-based to a MySQL-based data solution.
+
+    In genera, the _foo_bar attributes are variables that point to data sets
+    (usually dictionaries) in memory. They should only be accessed as properties
+    like instance.foo_bar, which will return the data in _foo_bar if it's
+    already in memory or load it from disk if necessary. This prevents having a
+    long, expensive memory load during initialization.
+    """
     def __init__(self):
         self._user_to_forums = None
         self._forum_to_users = None
@@ -90,6 +130,15 @@ class DataPuller(object):
         self._active_forum_threads = None
         self._thread_posts = None
         self._forum_details = None
+
+        # create MySQL database session
+        engine = create_engine(URL(**MYSQL_DB))
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        self.session = Session()
+
+    def __del__(self):
+        self.session.close()
 
     def load_key(self, keyfile):
         """ Initialize a DisqusAPI handle """
@@ -171,6 +220,7 @@ class DataPuller(object):
         return self._all_threads
 
     def save_exit(self):
+        """ Save all state and exit safely """
         print 'saving all data...'
 
         # save all json files
@@ -198,10 +248,8 @@ class DataPuller(object):
     ###########################################################################
 
     def pull_users(self, forum, min_users=1000):
-        """
-        Try to pull at least min_users of a forum's most active (public) users.
-        TODO: this function is ugly
-        """
+        """ Try to pull at least min_users of a forum's most active users. """
+        # TODO: this function is ugly
         users = set(self.forum_to_users.get(forum, []))
         assert len(users) < min_users
         num_private = 0
@@ -210,6 +258,7 @@ class DataPuller(object):
 
         print 'trying to pull', min_users - len(users), \
             'more users for forum', forum
+
         while len(users) < min_users:
             cursor = '%d:0:0' % (i * 100)
             try:
@@ -305,9 +354,7 @@ class DataPuller(object):
         return 0    # s'all good, man
 
     def pull_all_forum_users(self, min_users=1000):
-        """
-        Loop over forums and pull in active user lists for each one
-        """
+        """ Loop over forums and pull in active user lists for each one """
         activity = self.get_forum_activity()
 
         # sort forums by 30 day activity
@@ -462,6 +509,8 @@ class DataPuller(object):
     ###########################################################################
 
     def pull_thread_posts(self, thread, total_posts=1000):
+        """ Pull all posts for a specified thread """
+
         assert thread not in self.thread_posts
 
         print 'pulling first', total_posts, 'posts for thread', thread
@@ -508,7 +557,9 @@ class DataPuller(object):
             json.dump(all_data, f)
         save_json(self.thread_posts, 'thread_posts')
 
-    def pull_all_posts(self, n_threads=25):
+    def pull_all_thread_posts(self, n_threads=25):
+        """ Pull all posts for a certain number of threads for each forum """
+
         all_threads = []
         for forum, threads in self.active_forum_threads.items():
             if forum not in self.forum_details or \
@@ -548,18 +599,24 @@ class DataPuller(object):
                 print 'skipping thread', repr(thread['clean_title'])
 
     def pull_forum_threads(self, forum):
+        """ Pull all thread metadata for a certain forum """
+
         if forum not in self.all_forum_threads:
-            # the first instant of President Trump's tenure
-            start_time = datetime.datetime(2017, 1, 20, 17, 0, 0)
+            # If we haven't pulled data for this forum, start looking at the
+            # first instant of President Trump's tenure
+            start_time = TRUMP_START
             self.all_forum_threads[forum] = {}
             total_posts = 0
         else:
+            # if we already have threads for this forum, start our query after
+            # the last thread we saw
             times = [dateutil.parser.parse(d['createdAt']) for t, d in
                      self.all_forum_threads[forum].items() if t != 'complete']
             start_time = max(times)
             total_posts = len(self.all_forum_threads[forum])
 
-        end_time = datetime.datetime(2017, 2, 20, 17, 0, 0)
+        # collect data up to the end of Trump's first month
+        end_time = add_month(TRUMP_START)
         last_time = start_time
 
         print 'pulling all threads for forum', forum
@@ -610,6 +667,8 @@ class DataPuller(object):
         save_json(self.all_forum_threads, 'all_forum_threads')
 
     def pull_all_threads(self, forums):
+        """ Pull all thread metadata from a list of forums """
+
         print "pulling data from", len(forums), "forums"
 
         cutoff_time = datetime.datetime(2017, 1, 1)
@@ -631,11 +690,67 @@ class DataPuller(object):
                 print 'forum', forum, 'last post on', last_time
                 self.pull_forum_threads(forum)
 
+    def pull_all_posts_window(self, start_time=TRUMP_START,
+                              stop_time=add_month(TRUMP_START)):
+        """ Pull every single post made on Disqus during a certain time window """
+
+        print "pulling all posts between", start_time, "and", stop_time
+        start_ts = time.mktime(start_time.timetuple())
+        stop_ts = time.mktime(stop_time.timetuple())
+
+        # loop indefinitely, gathering posts data
+        while True:
+            # pull another frame of posts posts
+            try:
+               res = self.api.request('posts.list', forum=':all', limit=100,
+                                      order='asc', start=start_ts, end=stop_ts,
+                                      cursor=cursor)
+            except APIError as err:
+                print err
+                code = int(err.code)
+                if code == 22:
+                    res = []
+                else:
+                    return code
+            except FormattingError as err:
+                print err
+                res = []
+
+            # reverse the order and save
+            results = list(res)[::-1]
+            for p in posts:
+                post = Post(id=int(p['id']),
+                            forum=int(p['forum']),
+                            thread=int(p['thread']),
+                            author=int(p['author'].get('id', -1)),
+                            parent=int(p['parent'] or -1),
+                            raw_text=p['raw_message'],
+                            time=p['createdAt'],
+                            likes=int(p['likes']),
+                            dislikes=int(p['dislikes']),
+                            num_reports=int(p['numReports']),
+                            is_approved=bool(p['isApproved']),
+                            is_edited=bool(p['isEdited']),
+                            is_deleted=bool(p['isDeleted']),
+                            is_flagged=bool(p['isFlagged']),
+                            is_spam=bool(p['isSpam']))
+
+                self.session.add(row)
+                self.session.commit()
+
+            last_time = dateutil.parser.parse(results[-1]['createdAt'])
+            cursor = res.cursor['next']
+
+            # we're done if we go over time
+            if last_time > stop_time:
+                break
+
     ###########################################################################
     ##  Utility functions and graph stuff  ####################################
     ###########################################################################
 
     def get_deduped_ftu(self):
+        """ Get a 'deduplicated' version of the forum_to_users dataset """
         ftu = {}
         for forum, users in self.forum_to_users.items():
             if forum in DEDUP:
@@ -647,6 +762,7 @@ class DataPuller(object):
         return ftu
 
     def get_deduped_utf(self):
+        """ Get a 'deduplicated' version of the user_to_forums dataset """
         utf = {}
         for user, forums in self.user_to_forums.items():
             deduped = set(f for f in forums if f not in DEDUP)
@@ -684,13 +800,13 @@ class DataPuller(object):
 
         return forum_edges
 
-    # map forums to recent activity
     def get_forum_activity(self, dedup=False):
+        """ map forums to recent activity """
         return {f: d.get('posts30d', 0) for f, d in self.forum_details.items()}
 
     def get_forum_threads(self):
         """
-        return, for each forum, a list of threads for which we have
+        return, for each forum, a list of the threads for which we have
         downloaded posts
         """
         threads = {}
@@ -699,14 +815,23 @@ class DataPuller(object):
         return threads
 
     def get_all_forums(self):
+        """ It's in the name """
         forums = set()
         for u, fs in self.user_to_forums.items():
             forums |= set(fs)
 
         return list(forums)
 
-    # TODO: this is dumb
     def get_weights(self, dedup=False):
+        """ Returns a dumb, arbitrary weight for each forum
+
+        Why is this useful, you ask? It has some vague relation to the pagerank
+        of a forum -- i.e. a forum's score is based on how much it is referenced
+        by other forums, and references count for more from forums with fewer
+        outgoing references. This doesn't give more popular forums more outgoing
+        reference weights for whatever reason. Why didn't I just use pagerank?
+        good question.
+        """
         forums = defaultdict(float)
 
         for ftf in self.get_forum_edges(dedup=dedup).values():
@@ -719,6 +844,11 @@ class DataPuller(object):
 
 
 def rank_forums(data):
+    """
+    When enough things are commented/uncommented in this function, it will
+    print out some kind of list of important forums. I haven't used this in a
+    long time and it probably doesn't work.
+    """
     cutoff_time = datetime.datetime(2017, 1, 1)
     def alive_str(d):
         if 'lastPost' not in d:
@@ -751,11 +881,11 @@ def rank_forums(data):
 
 
 def sleep_until_next_hour():
-        # sleep until the next hour
-        t = datetime.datetime.now()
-        next_time = datetime.datetime(t.year,t.month,t.day,(t.hour+1)%24,0)
-        print 'Sleeping until %s...' % next_time
-        time.sleep((next_time - t).seconds)
+    """ Just don't do anything until the clock strikes n+1 """
+    t = datetime.datetime.now()
+    next_time = datetime.datetime(t.year,t.month,t.day,(t.hour+1)%24,0)
+    print 'Sleeping until %s...' % next_time
+    time.sleep((next_time - t).seconds)
 
 
 if __name__ == '__main__':
@@ -782,4 +912,4 @@ if __name__ == '__main__':
     #puller.pull_forum_details()
     #puller.pull_all_forum_activity()
     #code = puller.pull_all_forum_users()
-    #puller.pull_all_posts(n_threads=50)
+    #puller.pull_all_tread_posts(n_threads=50)
