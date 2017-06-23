@@ -132,10 +132,10 @@ class DataPuller(object):
         self._forum_details = None
 
         # create MySQL database session
-        engine = create_engine(URL(**MYSQL_DB))
-        Session = sessionmaker()
-        Session.configure(bind=engine)
-        self.session = Session()
+        #engine = create_engine(URL(**MYSQL_DB))
+        #Session = sessionmaker()
+        #Session.configure(bind=engine)
+        #self.session = Session()
 
     def __del__(self):
         self.session.close()
