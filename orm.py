@@ -9,13 +9,13 @@ class Post(Base):
     id = Column(Integer, primary_key=True)
 
     # relations
-    forum = Column(String)
+    forum = Column(String(100))
     thread = Column(Integer)
     author = Column(Integer)
     parent = Column(Integer)
 
     # data
-    raw_text = Column(String)
+    raw_text = Column(String(10000))
     time = Column(DateTime)
     likes = Column(Integer)
     dislikes = Column(Integer)

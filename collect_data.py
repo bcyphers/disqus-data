@@ -17,6 +17,7 @@ from collections import defaultdict
 from numpy import linalg
 from termcolor import colored
 from sqlalchemy.engine.url import URL
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, inspect
 
 
@@ -50,6 +51,8 @@ MYSQL_DB = {
     'username': 'bcyphers',
     'host': 'localhost',
     'port': 3306,
+    'password': os.environ['MYSQL_PASSWD'],
+    'database': 'disqus',
 }
 
 # arguments for the script: more to come
@@ -132,10 +135,10 @@ class DataPuller(object):
         self._forum_details = None
 
         # create MySQL database session
-        #engine = create_engine(URL(**MYSQL_DB))
-        #Session = sessionmaker()
-        #Session.configure(bind=engine)
-        #self.session = Session()
+        engine = create_engine(URL(**MYSQL_DB))
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        self.session = Session()
 
     def __del__(self):
         self.session.close()
@@ -697,14 +700,19 @@ class DataPuller(object):
         print "pulling all posts between", start_time, "and", stop_time
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
+        cursor = None
 
         # loop indefinitely, gathering posts data
         while True:
             # pull another frame of posts posts
             try:
-               res = self.api.request('posts.list', forum=':all', limit=100,
-                                      order='asc', start=start_ts, end=stop_ts,
-                                      cursor=cursor)
+                if cursor is None:
+                    res = self.api.request('posts.list', forum=':all', limit=100,
+                                           order='asc', start=start_ts, end=stop_ts)
+                else:
+                    res = self.api.request('posts.list', forum=':all', limit=100,
+                                           order='asc', start=start_ts,
+                                           end=stop_ts, cursor=cursor)
             except APIError as err:
                 print err
                 code = int(err.code)
@@ -716,11 +724,14 @@ class DataPuller(object):
                 print err
                 res = []
 
-            # reverse the order and save
-            results = list(res)[::-1]
-            for p in posts:
+            results = list(res)
+            print 'storing %d posts between %s and %s' % (len(results),
+                                                          results[0]['createdAt'],
+                                                          results[-1]['createdAt'])
+            pdb.set_trace()
+            for p in results:
                 post = Post(id=int(p['id']),
-                            forum=int(p['forum']),
+                            forum=p['forum'],
                             thread=int(p['thread']),
                             author=int(p['author'].get('id', -1)),
                             parent=int(p['parent'] or -1),
@@ -735,7 +746,7 @@ class DataPuller(object):
                             is_flagged=bool(p['isFlagged']),
                             is_spam=bool(p['isSpam']))
 
-                self.session.add(row)
+                self.session.add(post)
                 self.session.commit()
 
             last_time = dateutil.parser.parse(results[-1]['createdAt'])
@@ -744,6 +755,8 @@ class DataPuller(object):
             # we're done if we go over time
             if last_time > stop_time:
                 break
+
+        return 0
 
     ###########################################################################
     ##  Utility functions and graph stuff  ####################################
@@ -896,7 +909,8 @@ if __name__ == '__main__':
     while True:
         for keyfile in args.keyfiles:
             puller.load_key(keyfile)
-            code = puller.pull_all_user_forums(400)
+            code = puller.pull_all_posts_window()
+            #code = puller.pull_all_user_forums(400)
             #puller.pull_all_forum_activity()
             #code = puller.pull_forum_details(num_forums=1000)
             if code == 0:
