@@ -1,4 +1,4 @@
-from sqlalchemy import (create_engine, inspect, Column, String, Integer,
+from sqlalchemy import (create_engine, inspect, Column, Unicode, BigInteger,
                         Boolean, DateTime)
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -6,20 +6,20 @@ Base = declarative_base()
 
 class Post(Base):
     __tablename__ = 'posts'
-    id = Column(Integer, primary_key=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=False)
 
     # relations
-    forum = Column(String(100))
-    thread = Column(Integer)
-    author = Column(Integer)
-    parent = Column(Integer)
+    forum = Column(Unicode(100))
+    thread = Column(BigInteger)
+    author = Column(BigInteger)
+    parent = Column(BigInteger)
 
     # data
-    raw_text = Column(String(10000))
+    raw_text = Column(Unicode(10000))
     time = Column(DateTime)
-    likes = Column(Integer)
-    dislikes = Column(Integer)
-    num_reports = Column(Integer)
+    likes = Column(BigInteger)
+    dislikes = Column(BigInteger)
+    num_reports = Column(BigInteger)
 
     # boolean attributes
     is_approved = Column(Boolean)

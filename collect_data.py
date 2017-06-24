@@ -18,7 +18,8 @@ from numpy import linalg
 from termcolor import colored
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, inspect
+from sqlalchemy.sql import func
+from sqlalchemy import create_engine, inspect, exists
 
 
 DEDUP = {
@@ -57,7 +58,7 @@ MYSQL_DB = {
 
 # arguments for the script: more to come
 ap = argparse.ArgumentParser()
-ap.add_argument('keyfiles', type=str, nargs='+', help='path to api key file(s)')
+ap.add_argument('keyfile', type=str, help='path to api key file')
 ap.add_argument('--data-path', type=str, default=DATA_PATH,
                 help='path to data directory')
 
@@ -135,9 +136,9 @@ class DataPuller(object):
         self._forum_details = None
 
         # create MySQL database session
-        engine = create_engine(URL(**MYSQL_DB))
+        self.engine = create_engine(URL(**MYSQL_DB))
         Session = sessionmaker()
-        Session.configure(bind=engine)
+        Session.configure(bind=self.engine)
         self.session = Session()
 
     def __del__(self):
@@ -702,6 +703,10 @@ class DataPuller(object):
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
 
+        pdb.set_trace()
+        real_min_ts = self.session.query(func.max(Post.time)).filter(
+            Post.time <= stop_time, Post.time >= start_time).first()
+
         # loop indefinitely, gathering posts data
         while True:
             # pull another frame of posts posts
@@ -728,14 +733,19 @@ class DataPuller(object):
             print 'storing %d posts between %s and %s' % (len(results),
                                                           results[0]['createdAt'],
                                                           results[-1]['createdAt'])
-            pdb.set_trace()
             for p in results:
-                post = Post(id=int(p['id']),
-                            forum=p['forum'],
+                post_id = int(p['id'])
+                if self.session.query(Post).get(post_id):
+                    print 'post %d already exists in database' % post_id
+                    continue
+
+                # if it doesn't exist...
+                post = Post(id=post_id,
+                            forum=unicode(p['forum']),
                             thread=int(p['thread']),
                             author=int(p['author'].get('id', -1)),
                             parent=int(p['parent'] or -1),
-                            raw_text=p['raw_message'],
+                            raw_text=unicode(p['raw_message']),
                             time=p['createdAt'],
                             likes=int(p['likes']),
                             dislikes=int(p['dislikes']),
@@ -746,8 +756,11 @@ class DataPuller(object):
                             is_flagged=bool(p['isFlagged']),
                             is_spam=bool(p['isSpam']))
 
-                self.session.add(post)
-                self.session.commit()
+                try:
+                    self.session.add(post)
+                    self.session.commit()
+                except Exception as e:
+                    pdb.set_trace()
 
             last_time = dateutil.parser.parse(results[-1]['createdAt'])
             cursor = res.cursor['next']
@@ -755,8 +768,6 @@ class DataPuller(object):
             # we're done if we go over time
             if last_time > stop_time:
                 break
-
-        return 0
 
     ###########################################################################
     ##  Utility functions and graph stuff  ####################################
@@ -907,21 +918,20 @@ if __name__ == '__main__':
     DATA_PATH = args.data_path
 
     while True:
-        for keyfile in args.keyfiles:
-            puller.load_key(keyfile)
-            code = puller.pull_all_posts_window()
-            #code = puller.pull_all_user_forums(400)
-            #puller.pull_all_forum_activity()
-            #code = puller.pull_forum_details(num_forums=1000)
-            if code == 0:
-                print "Received code 0: done!"
-                sys.exit(0)
-            if code == 13:
-                continue
-
-        # if we've hit the api limit, wait a while
-        if code == 13:
+        puller.load_key(args.keyfile)
+        code = puller.pull_all_posts_window()
+        #code = puller.pull_all_user_forums(400)
+        #puller.pull_all_forum_activity()
+        #code = puller.pull_forum_details(num_forums=1000)
+        if code == 0:
+            print "Received code 0: done!"
+            sys.exit(0)
+        elif code == 13:
+            # if we've hit the api limit, wait a while
             sleep_until_next_hour()
+        else:
+            pdb.set_trace()
+
 
     #puller.pull_forum_details()
     #puller.pull_all_forum_activity()
