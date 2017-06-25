@@ -1,21 +1,24 @@
 from sqlalchemy import (create_engine, inspect, Column, Unicode, BigInteger,
                         Boolean, DateTime)
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
 class Post(Base):
     __tablename__ = 'posts'
+    __table_args__ = {'mysql_charset':'utf8'}
+
     id = Column(BigInteger, primary_key=True, autoincrement=False)
 
     # relations
-    forum = Column(Unicode(100))
+    forum = Column(Unicode(255))
     thread = Column(BigInteger)
     author = Column(BigInteger)
     parent = Column(BigInteger)
 
     # data
-    raw_text = Column(Unicode(10000))
+    raw_text = Column(MEDIUMTEXT(unicode=True))
     time = Column(DateTime)
     likes = Column(BigInteger)
     dislikes = Column(BigInteger)

@@ -12,7 +12,7 @@ import sys
 import time
 
 from disqusapi import DisqusAPI, APIError, FormattingError
-from orm import Post
+from orm import Post, Base
 from collections import defaultdict
 from numpy import linalg
 from termcolor import colored
@@ -54,6 +54,7 @@ MYSQL_DB = {
     'port': 3306,
     'password': os.environ['MYSQL_PASSWD'],
     'database': 'disqus',
+    'query': {'charset': 'utf8mb4'},
 }
 
 # arguments for the script: more to come
@@ -137,6 +138,8 @@ class DataPuller(object):
 
         # create MySQL database session
         self.engine = create_engine(URL(**MYSQL_DB))
+        Base.metadata.create_all(bind=self.engine)
+
         Session = sessionmaker()
         Session.configure(bind=self.engine)
         self.session = Session()
@@ -703,13 +706,18 @@ class DataPuller(object):
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
 
-        pdb.set_trace()
         real_min_ts = self.session.query(func.max(Post.time)).filter(
             Post.time <= stop_time, Post.time >= start_time).first()
+
+        if real_min_ts[0] is not None:
+            start_ts = time.mktime(real_min_ts[0].timetuple())
+
+        last_ts = start_ts
 
         # loop indefinitely, gathering posts data
         while True:
             # pull another frame of posts posts
+            print 'pulling posts beginning %s...' % start_ts
             try:
                 if cursor is None:
                     res = self.api.request('posts.list', forum=':all', limit=100,
@@ -722,7 +730,14 @@ class DataPuller(object):
                 print err
                 code = int(err.code)
                 if code == 22:
+                    # formatting error
                     res = []
+                elif code == 8:
+                    # "forum matching query does not exist"
+                    cursor = None
+                    last_ts += 1
+                    start_ts = last_ts
+                    continue
                 else:
                     return code
             except FormattingError as err:
@@ -730,9 +745,9 @@ class DataPuller(object):
                 res = []
 
             results = list(res)
-            print 'storing %d posts between %s and %s' % (len(results),
-                                                          results[0]['createdAt'],
-                                                          results[-1]['createdAt'])
+            print 'storing %d posts between %s and %s...' % (len(results),
+                                                             results[0]['createdAt'],
+                                                             results[-1]['createdAt'])
             for p in results:
                 post_id = int(p['id'])
                 if self.session.query(Post).get(post_id):
@@ -745,7 +760,7 @@ class DataPuller(object):
                             thread=int(p['thread']),
                             author=int(p['author'].get('id', -1)),
                             parent=int(p['parent'] or -1),
-                            raw_text=unicode(p['raw_message']),
+                            raw_text=p['raw_message'],
                             time=p['createdAt'],
                             likes=int(p['likes']),
                             dislikes=int(p['dislikes']),
@@ -760,13 +775,18 @@ class DataPuller(object):
                     self.session.add(post)
                     self.session.commit()
                 except Exception as e:
+                    print
+                    print e
+                    print
                     pdb.set_trace()
 
-            last_time = dateutil.parser.parse(results[-1]['createdAt'])
+                last_ts = time.mktime(dateutil.parser.parse(p['createdAt']).timetuple())
+
+            print 'done.'
             cursor = res.cursor['next']
 
             # we're done if we go over time
-            if last_time > stop_time:
+            if last_ts > stop_ts:
                 break
 
     ###########################################################################
