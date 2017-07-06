@@ -415,16 +415,18 @@ class DataPuller(object):
 
     def pull_forum_details(self, num_forums=-1):
         # first, get all forums that are part of our graph
-        for f in self.forum_to_users.keys():
-            if f not in self.forum_details:
-                print 'requesting data for forum', f
-                res = self.api.request('forums.details', forum=f)
-                self.forum_details[f] = res
-                print 'saving forum data...'
-                save_json(self.forum_details, 'forum_details')
+        #for f in self.forum_to_users.keys():
+            #if f not in self.forum_details:
+                #print 'requesting data for forum', f
+                #res = self.api.request('forums.details', forum=f)
+                #self.forum_details[f] = res
+                #print 'saving forum data...'
+                #save_json(self.forum_details, 'forum_details')
 
         # start getting the rest
-        items = [i for i in self.get_weights().items() if i[0] not in
+        #items = [i for i in self.get_weights().items() if i[0] not in
+                 #self.forum_details]
+        items = [i for i in self.get_num_forum_posts().items() if i[0] not in
                  self.forum_details]
         forums = sorted(items, key=lambda i: -i[1])
         for f, w in forums[:num_forums]:
@@ -935,10 +937,10 @@ if __name__ == '__main__':
         start_hour = datetime.datetime.now().hour
         for kf in args.keyfile:
             puller.load_key(kf)
-            code = puller.pull_all_posts_window()
+            #code = puller.pull_all_posts_window()
             #code = puller.pull_all_user_forums(400)
             #puller.pull_all_forum_activity()
-            #code = puller.pull_forum_details(num_forums=1000)
+            code = puller.pull_forum_details(num_forums=1000)
             if code == 0:
                 print "Received code 0: done!"
                 sys.exit(0)
