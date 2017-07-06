@@ -12,14 +12,11 @@ import sys
 import time
 
 from disqusapi import DisqusAPI, APIError, FormattingError
-from orm import Post, Base
+from orm import Post, Forum, Base, get_mysql_session
 from collections import defaultdict
 from numpy import linalg
 from termcolor import colored
-from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func
-from sqlalchemy import create_engine, inspect, exists
 
 
 DEDUP = {
@@ -46,20 +43,9 @@ print DATA_PATH
 # the first instant of President Trump's tenure
 TRUMP_START = datetime.datetime(2017, 1, 20, 17, 0, 0)
 
-# MySQL database info
-MYSQL_DB = {
-    'drivername': 'mysql',
-    'username': 'bcyphers',
-    'host': 'localhost',
-    'port': 3306,
-    'password': os.environ['MYSQL_PASSWD'],
-    'database': 'disqus',
-    'query': {'charset': 'utf8mb4'},
-}
-
 # arguments for the script: more to come
 ap = argparse.ArgumentParser()
-ap.add_argument('keyfile', type=str, help='path to api key file')
+ap.add_argument('keyfile', type=str, nargs='+', help='path to api key file')
 ap.add_argument('--data-path', type=str, default=DATA_PATH,
                 help='path to data directory')
 
@@ -136,13 +122,7 @@ class DataPuller(object):
         self._thread_posts = None
         self._forum_details = None
 
-        # create MySQL database session
-        self.engine = create_engine(URL(**MYSQL_DB))
-        Base.metadata.create_all(bind=self.engine)
-
-        Session = sessionmaker()
-        Session.configure(bind=self.engine)
-        self.session = Session()
+        _, self.session = get_mysql_session()
 
     def __del__(self):
         self.session.close()
@@ -733,9 +713,14 @@ class DataPuller(object):
                     # formatting error
                     res = []
                 elif code == 8:
-                    # "forum matching query does not exist"
+                    # "forum matching query does not exist": try next second
                     cursor = None
                     last_ts += 1
+                    start_ts = last_ts
+                    continue
+                elif code == 15:
+                    # "internal server error": try again
+                    cursor = None
                     start_ts = last_ts
                     continue
                 else:
@@ -754,9 +739,18 @@ class DataPuller(object):
                     print 'post %d already exists in database' % post_id
                     continue
 
+                # check for forum
+                forum_id = unicode(p['forum'])
+                forum = self.session.query(Forum).filter(Forum.id == forum_id).first()
+                if forum is not None:
+                    forum_pk = forum.pk
+                else:
+                    forum_pk = None
+
                 # if it doesn't exist...
                 post = Post(id=post_id,
-                            forum=unicode(p['forum']),
+                            forum=forum_id,
+                            forum_pk=forum_pk,
                             thread=int(p['thread']),
                             author=int(p['author'].get('id', -1)),
                             parent=int(p['parent'] or -1),
@@ -927,7 +921,7 @@ def rank_forums(data):
 def sleep_until_next_hour():
     """ Just don't do anything until the clock strikes n+1 """
     t = datetime.datetime.now()
-    next_time = datetime.datetime(t.year,t.month,t.day,(t.hour+1)%24,0)
+    next_time = datetime.datetime(t.year,t.month,t.day,(t.hour+1)%24, 1)
     print 'Sleeping until %s...' % next_time
     time.sleep((next_time - t).seconds)
 
@@ -938,19 +932,25 @@ if __name__ == '__main__':
     DATA_PATH = args.data_path
 
     while True:
-        puller.load_key(args.keyfile)
-        code = puller.pull_all_posts_window()
-        #code = puller.pull_all_user_forums(400)
-        #puller.pull_all_forum_activity()
-        #code = puller.pull_forum_details(num_forums=1000)
-        if code == 0:
-            print "Received code 0: done!"
-            sys.exit(0)
-        elif code == 13:
+        start_hour = datetime.datetime.now().hour
+        for kf in args.keyfile:
+            puller.load_key(kf)
+            code = puller.pull_all_posts_window()
+            #code = puller.pull_all_user_forums(400)
+            #puller.pull_all_forum_activity()
+            #code = puller.pull_forum_details(num_forums=1000)
+            if code == 0:
+                print "Received code 0: done!"
+                sys.exit(0)
+            elif code == 13:
+                continue
+            else:
+                pdb.set_trace()
+
+        hour = datetime.datetime.now().hour
+        if code == 13 and hour == start_hour:
             # if we've hit the api limit, wait a while
             sleep_until_next_hour()
-        else:
-            pdb.set_trace()
 
 
     #puller.pull_forum_details()
