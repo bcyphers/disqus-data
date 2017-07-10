@@ -92,7 +92,7 @@ def order_thread_posts(posts):
     return ordered_posts
 
 
-def get_tokenized_posts(forum=None, author=None):
+def get_tokenized_posts(forum=None, author=None, adult=False):
     engine, session = get_mysql_session()
 
     print "querying for posts%s..." % ((' from forum ' + forum) if forum else '' +
@@ -102,6 +102,9 @@ def get_tokenized_posts(forum=None, author=None):
         query = query.filter(Post.forum == forum)
     if author is not None:
         query = query.filter(Post.author == author)
+    if adult:
+        query = query.filter(Post.forum_pk == Forum.pk).\
+                      filter(Forum.adult_content == 1)
 
     query = query.limit(5000000)
     df = pd.read_sql(query.statement, query.session.bind)
@@ -134,7 +137,7 @@ def get_tokenized_posts(forum=None, author=None):
         ordered_posts.extend(order_thread_posts(tposts))
 
     print "cleaning posts..."
-    return (clean_tokenize(df.raw_text[p.id]) for p in ordered_posts)
+    return [clean_tokenize(df.raw_text[p.id]) for p in ordered_posts]
 
 
 def get_forum_docs(forum):

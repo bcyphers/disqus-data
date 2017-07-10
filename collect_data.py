@@ -415,18 +415,16 @@ class DataPuller(object):
 
     def pull_forum_details(self, num_forums=-1):
         # first, get all forums that are part of our graph
-        #for f in self.forum_to_users.keys():
-            #if f not in self.forum_details:
-                #print 'requesting data for forum', f
-                #res = self.api.request('forums.details', forum=f)
-                #self.forum_details[f] = res
-                #print 'saving forum data...'
-                #save_json(self.forum_details, 'forum_details')
+        for f in self.forum_to_users.keys():
+            if f not in self.forum_details:
+                print 'requesting data for forum', f
+                res = self.api.request('forums.details', forum=f)
+                self.forum_details[f] = res
+                print 'saving forum data...'
+                save_json(self.forum_details, 'forum_details')
 
         # start getting the rest
-        #items = [i for i in self.get_weights().items() if i[0] not in
-                 #self.forum_details]
-        items = [i for i in self.get_num_forum_posts().items() if i[0] not in
+        items = [i for i in self.get_weights().items() if i[0] not in
                  self.forum_details]
         forums = sorted(items, key=lambda i: -i[1])
         for f, w in forums[:num_forums]:
@@ -680,10 +678,13 @@ class DataPuller(object):
                 self.pull_forum_threads(forum)
 
     def pull_all_posts_window(self, start_time=TRUMP_START,
-                              stop_time=add_month(TRUMP_START)):
+                              stop_time=add_month(TRUMP_START), forum=None):
         """ Pull every single post made on Disqus during a certain time window """
 
-        print "pulling all posts between", start_time, "and", stop_time
+        print 'pulling all posts ' + \
+            (('from forum %s ' % forum) if forum is not None else '') + \
+            'between', start_time, 'and', stop_time
+
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
@@ -701,13 +702,19 @@ class DataPuller(object):
             # pull another frame of posts posts
             print 'pulling posts beginning %s...' % start_ts
             try:
-                if cursor is None:
-                    res = self.api.request('posts.list', forum=':all', limit=100,
-                                           order='asc', start=start_ts, end=stop_ts)
-                else:
-                    res = self.api.request('posts.list', forum=':all', limit=100,
-                                           order='asc', start=start_ts,
-                                           end=stop_ts, cursor=cursor)
+                kwargs = {'forum': ':all',
+                          'limit': 100,
+                          'order': 'asc',
+                          'start': start_ts,
+                          'end': stop_ts}
+
+                if cursor is not None:
+                    kwargs['cursor'] = cursor
+                if forum is not None:
+                    kwargs['forum'] = forum
+
+                res = self.api.request('posts.list', **kwargs)
+
             except APIError as err:
                 print err
                 code = int(err.code)
@@ -729,9 +736,15 @@ class DataPuller(object):
                     return code
             except FormattingError as err:
                 print err
-                res = []
+                cursor = None
+                start_ts = last_ts
+                continue
 
+            cursor = res.cursor['next']
             results = list(res)
+            if not len(results):
+                continue
+
             print 'storing %d posts between %s and %s...' % (len(results),
                                                              results[0]['createdAt'],
                                                              results[-1]['createdAt'])
@@ -743,9 +756,9 @@ class DataPuller(object):
 
                 # check for forum
                 forum_id = unicode(p['forum'])
-                forum = self.session.query(Forum).filter(Forum.id == forum_id).first()
-                if forum is not None:
-                    forum_pk = forum.pk
+                forum_obj = self.session.query(Forum).filter(Forum.id == forum_id).first()
+                if forum_obj is not None:
+                    forum_pk = forum_obj.pk
                 else:
                     forum_pk = None
 
@@ -779,7 +792,6 @@ class DataPuller(object):
                 last_ts = time.mktime(dateutil.parser.parse(p['createdAt']).timetuple())
 
             print 'done.'
-            cursor = res.cursor['next']
 
             # we're done if we go over time
             if last_ts > stop_ts:
@@ -937,10 +949,14 @@ if __name__ == '__main__':
         start_hour = datetime.datetime.now().hour
         for kf in args.keyfile:
             puller.load_key(kf)
-            #code = puller.pull_all_posts_window()
+            bb_start = datetime.datetime(2012, 1, 1)
+            code = puller.pull_all_posts_window(start_time=bb_start,
+                                                stop_time=TRUMP_START -
+                                                datetime.timedelta(seconds=1),
+                                                forum='breitbartproduction')
             #code = puller.pull_all_user_forums(400)
             #puller.pull_all_forum_activity()
-            code = puller.pull_forum_details(num_forums=1000)
+            #code = puller.pull_forum_details(num_forums=1000)
             if code == 0:
                 print "Received code 0: done!"
                 sys.exit(0)
