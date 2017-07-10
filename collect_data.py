@@ -13,6 +13,7 @@ import time
 
 from disqusapi import DisqusAPI, APIError, FormattingError
 from orm import Post, Forum, Base, get_mysql_session
+from query_doer import get_forum_counts
 from collections import defaultdict
 from numpy import linalg
 from termcolor import colored
@@ -122,6 +123,7 @@ class DataPuller(object):
         self._thread_posts = None
         self._forum_details = None
 
+        self.forum_counts = None
         _, self.session = get_mysql_session()
 
     def __del__(self):
@@ -424,14 +426,14 @@ class DataPuller(object):
                 #save_json(self.forum_details, 'forum_details')
 
         # start getting the rest
-        #items = [i for i in self.get_weights().items() if i[0] not in
-                 #self.forum_details]
-        items = [i for i in self.get_num_forum_posts().items() if i[0] not in
-                 self.forum_details]
+        if not self.forum_counts:
+            self.forum_counts = get_forum_counts(self.session)
+        items = [i for i in self.forum_counts.items()
+                 if i[0] not in self.forum_details]
         forums = sorted(items, key=lambda i: -i[1])
         for f, w in forums[:num_forums]:
             if f not in self.forum_details:
-                print 'requesting data for forum', f, 'with', w, 'references'
+                print 'requesting data for forum', f, 'with', w, 'posts'
                 try:
                     res = self.api.request('forums.details', forum=f)
                 except APIError as err:
@@ -439,15 +441,51 @@ class DataPuller(object):
                         print 'API limit exceeded'
                         return 13
                     # Invalid argument: remove thread
-                    if int(err.code) == 2:
-                       continue
+                    elif int(err.code) == 2:
+                        continue
+                    else:
+                        pdb.set_trace()
+                        return err.code
                 except FormattingError as err:
                     print err
                     continue
 
                 self.forum_details[f] = res
-                print 'saving forum data...'
-                save_json(self.forum_details, 'forum_details')
+                d = res
+                print 'saving data for forum', f
+                forum = Forum(pk=int(d['pk']),
+                              id=d['id'],
+                              name=unicode(d['name']),
+                              twitter_name=unicode(d['twitterName']),
+                              url=unicode(d['url']),
+                              founder=int(d['founder']),
+                              created_at=d['createdAt'],
+                              alexa_rank=-1,
+                              category=unicode(d['category']),
+                              description=unicode(d['raw_description']),
+                              guidelines=unicode(d['raw_guidelines']),
+                              language=str(d['language']),
+                              ads_enabled=bool(d['settings'].get('adsEnabled')),
+                              ads_video_enabled=bool(d['settings'].get('adsVideoEnabled')),
+                              adult_content=bool(d['settings'].get('adultContent')),
+                              allow_anon_post=bool(d['settings'].get('allowAnonPost')),
+                              allow_anon_vote=bool(d['settings'].get('allowAnonVotes')),
+                              allow_media=bool(d['settings'].get('allowMedia')),
+                              disable_3rd_party_trackers=bool(d['settings'].get(
+                                  'disable3rdPartyTrackers')),
+                              discovery_locked=bool(d['settings'].get('discoveryLocked')),
+                              is_vip=bool(d['settings'].get('isVIP')),
+                              must_verify=bool(d['settings'].get('mustVerify')),
+                              must_verify_email=bool(d['settings'].get('mustVerifyEmail')),
+                              discovery_enabled=bool(d['settings'].get(
+                                  'organicDiscoveryEnabled')),
+                              support_level=int(d['settings'].get(
+                                  'supportLevel', -1)),
+                              unapprove_links=bool(d['settings'].get(
+                                  'unapproveLinks')))
+                self.session.add(forum)
+                self.session.commit()
+
 
         # return 0 only if we've got details on every single forum
         if num_forums > len(forums) or num_forums == -1:

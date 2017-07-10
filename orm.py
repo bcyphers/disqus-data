@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 Base = declarative_base()
 
 # MySQL database info
-MYSQL_DB = {
+LOCAL_MYSQL_DB = {
     'drivername': 'mysql',
     'username': 'bcyphers',
     'host': 'localhost',
@@ -19,6 +19,17 @@ MYSQL_DB = {
     'query': {'charset': 'utf8mb4'},
 }
 
+REMOTE_MYSQL_DB = {
+    'drivername': 'mysql',
+    'username': 'bcyphers',
+    'host': '34.210.178.215',
+    'port': 3306,
+    'password': os.environ['MYSQL_PASSWD'],
+    'database': 'disqus',
+    'query': {'charset': 'utf8mb4'},
+}
+
+MYSQL_DB = REMOTE_MYSQL_DB
 
 def get_mysql_session():
     # create MySQL database session
