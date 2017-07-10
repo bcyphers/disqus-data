@@ -92,7 +92,8 @@ def order_thread_posts(posts):
     return ordered_posts
 
 
-def get_tokenized_posts(forum=None, author=None, adult=False):
+def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
+                        end_time=None):
     engine, session = get_mysql_session()
 
     print "querying for posts%s..." % ((' from forum ' + forum) if forum else '' +
@@ -105,6 +106,10 @@ def get_tokenized_posts(forum=None, author=None, adult=False):
     if adult:
         query = query.filter(Post.forum_pk == Forum.pk).\
                       filter(Forum.adult_content == 1)
+    if start_time is not None:
+        query = query.filter(Post.time >= start_time)
+    if end_time is not None:
+        query = query.filter(Post.time <= end_time)
 
     query = query.limit(5000000)
     df = pd.read_sql(query.statement, query.session.bind)
