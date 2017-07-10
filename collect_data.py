@@ -742,7 +742,7 @@ class DataPuller(object):
         # loop indefinitely, gathering posts data
         while True:
             # pull another frame of posts posts
-            print 'pulling posts beginning %s...' % start_ts
+            print 'pulling posts beginning %s...' % datetime.datetime.fromtimestamp(start_ts)
             try:
                 kwargs = {'forum': ':all',
                           'limit': 100,
