@@ -29,7 +29,7 @@ REMOTE_MYSQL_DB = {
     'query': {'charset': 'utf8mb4'},
 }
 
-MYSQL_DB = LOCAL_MYSQL_DB
+MYSQL_DB = REMOTE_MYSQL_DB
 
 def get_mysql_session():
     # create MySQL database session

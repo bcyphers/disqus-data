@@ -4,7 +4,7 @@ Pulls down data from Disqus and saves as ugly json files, then it can do some
 graph analysis and NLP things as well.
 
 ### Requirements
-sudo apt install python-dev python-virtualenv mysql-server libmysqlclient-dev
+sudo apt install python-dev python-pip python-virtualenv mysql-server libmysqlclient-dev
 
 ### Files
 Python scripts are in the main directory. 

@@ -731,11 +731,15 @@ class DataPuller(object):
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
 
-        real_min_ts = self.session.query(func.max(Post.time)).filter(
-            Post.time <= stop_time, Post.time >= start_time).first()
+        last_ts_query = self.session.query(func.max(Post.time)).filter(
+            Post.time <= stop_time, Post.time >= start_time)
+        if forum is not None:
+            last_ts_query = last_ts_query.filter(Post.forum == forum)
 
-        if real_min_ts[0] is not None:
-            start_ts = time.mktime(real_min_ts[0].timetuple())
+        real_min_ts = last_ts_query.first()[0]
+
+        if real_min_ts is not None:
+            start_ts = time.mktime(real_min_ts.timetuple())
 
         last_ts = start_ts
 
@@ -991,11 +995,11 @@ if __name__ == '__main__':
         start_hour = datetime.datetime.now().hour
         for kf in args.keyfile:
             puller.load_key(kf)
-            bb_start = datetime.datetime(2012, 1, 1)
-            code = puller.pull_all_posts_window(start_time=bb_start,
+            atl_start = datetime.datetime(2007, 1, 1)
+            code = puller.pull_all_posts_window(start_time=atl_start,
                                                 stop_time=TRUMP_START -
                                                 datetime.timedelta(seconds=1),
-                                                forum='breitbartproduction')
+                                                forum='theatlantic')
             #code = puller.pull_all_user_forums(400)
             #puller.pull_all_forum_activity()
             #code = puller.pull_forum_details(num_forums=1000)
