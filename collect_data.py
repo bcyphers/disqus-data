@@ -743,6 +743,11 @@ class DataPuller(object):
 
         last_ts = start_ts
 
+        if forum is not None:
+            forum_obj = self.session.query(Forum).filter(Forum.id == forum).first()
+            forum_id = forum
+            forum_pk = forum_obj.pk
+
         # loop indefinitely, gathering posts data
         while True:
             # pull another frame of posts posts
@@ -800,13 +805,14 @@ class DataPuller(object):
                     print 'post %d already exists in database' % post_id
                     continue
 
-                # check for forum
-                forum_id = unicode(p['forum'])
-                forum_obj = self.session.query(Forum).filter(Forum.id == forum_id).first()
-                if forum_obj is not None:
-                    forum_pk = forum_obj.pk
-                else:
-                    forum_pk = None
+                # query for forum if necessary
+                if forum is None:
+                    forum_id = unicode(p['forum'])
+                    forum_obj = self.session.query(Forum).filter(Forum.id == forum_id).first()
+                    if forum_obj is not None:
+                        forum_pk = forum_obj.pk
+                    else:
+                        forum_pk = None
 
                 # if it doesn't exist...
                 post = Post(id=post_id,
