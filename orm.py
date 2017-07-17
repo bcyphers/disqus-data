@@ -29,11 +29,14 @@ REMOTE_MYSQL_DB = {
     'query': {'charset': 'utf8mb4'},
 }
 
-MYSQL_DB = REMOTE_MYSQL_DB
 
-def get_mysql_session():
+def get_mysql_session(remote=True):
     # create MySQL database session
-    engine = create_engine(URL(**MYSQL_DB))
+    if remote:
+        engine = create_engine(URL(**REMOTE_MYSQL_DB))
+    else:
+        engine = create_engine(URL(**LOCAL_MYSQL_DB))
+
     Base.metadata.create_all(bind=engine)
 
     Session = sessionmaker()

@@ -11,6 +11,7 @@ import shutil
 import sys
 import time
 
+from dateutil.relativedelta import relativedelta
 from disqusapi import DisqusAPI, APIError, FormattingError
 from orm import Post, Forum, Base, get_mysql_session
 from query_doer import get_forum_counts
@@ -49,6 +50,14 @@ ap = argparse.ArgumentParser()
 ap.add_argument('keyfile', type=str, nargs='+', help='path to api key file')
 ap.add_argument('--data-path', type=str, default=DATA_PATH,
                 help='path to data directory')
+ap.add_argument('--remote', type=bool, action='store_true',
+                help='connect to remote database')
+ap.add_argument('--forum', type=str, default=DATA_PATH,
+                help='forum from which to collect data')
+ap.add_argument('--start-time', type=str, default='2007-01-01T00:00:00',
+                help='starting timestamp')
+ap.add_argument('--end-time', type=str, default='2017-01-20T16:59:59',
+                help='ending timestamp')
 
 
 ###############################################################################
@@ -124,7 +133,7 @@ class DataPuller(object):
         self._forum_details = None
 
         self.forum_counts = None
-        _, self.session = get_mysql_session()
+        _, self.session = get_mysql_session(remote=args.remote)
 
     def __del__(self):
         self.session.close()
@@ -719,8 +728,8 @@ class DataPuller(object):
                 print 'forum', forum, 'last post on', last_time
                 self.pull_forum_threads(forum)
 
-    def pull_all_posts_window(self, start_time=TRUMP_START,
-                              stop_time=add_month(TRUMP_START), forum=None):
+    def pull_all_posts_window(self, forum=None, start_time=TRUMP_START,
+                              stop_time=add_month(TRUMP_START)):
         """ Pull every single post made on Disqus during a certain time window """
 
         print 'pulling all posts ' + \
@@ -731,10 +740,12 @@ class DataPuller(object):
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
 
+        if forum is not None:
+            # TODO: this is pretty hacky
+            Post.__tablename__ = 'posts_%s' % forum
+
         last_ts_query = self.session.query(func.max(Post.time)).filter(
             Post.time <= stop_time, Post.time >= start_time)
-        if forum is not None:
-            last_ts_query = last_ts_query.filter(Post.forum == forum)
 
         real_min_ts = last_ts_query.first()[0]
 
@@ -997,15 +1008,18 @@ if __name__ == '__main__':
     puller = DataPuller()
     DATA_PATH = args.data_path
 
+    if args.start_time is not None:
+        start_time = datetime.strptime(args.start_time, '%Y-%m-%dT%H:%M:%S')
+    if args.end_time is not None:
+        end_time = datetime.strptime(args.end_time, '%Y-%m-%dT%H:%M:%S')
+
     while True:
         start_hour = datetime.datetime.now().hour
         for kf in args.keyfile:
             puller.load_key(kf)
-            atl_start = datetime.datetime(2007, 1, 1)
-            code = puller.pull_all_posts_window(start_time=atl_start,
-                                                stop_time=TRUMP_START -
-                                                datetime.timedelta(seconds=1),
-                                                forum='theatlantic')
+            code = puller.pull_all_posts_window(start_time=start_time,
+                                                stop_time=end_time
+                                                forum=args.forum)
             #code = puller.pull_all_user_forums(400)
             #puller.pull_all_forum_activity()
             #code = puller.pull_forum_details(num_forums=1000)
