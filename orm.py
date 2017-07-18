@@ -2,7 +2,7 @@ import os
 from collections import defaultdict
 
 from sqlalchemy import (create_engine, inspect, exists, Column, Unicode, String,
-                        Integer, BigInteger, Boolean, DateTime)
+                        Integer, BigInteger, Boolean, DateTime, ForeignKey)
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, TEXT
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.engine.url import URL
@@ -128,3 +128,13 @@ class Forum(Base):
     discovery_enabled = Column(Boolean)
     support_level = Column(Integer)
     unapprove_links = Column(Boolean)
+
+
+class AllSidesEntry(Base):
+    __tablename__ = 'allsides'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Unicode(100))
+    forum_pk = Column(BigInteger, ForeignKey('forums.pk'))
+    bias = Column(Integer)
+    category = Column(String(50))
