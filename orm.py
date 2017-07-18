@@ -1,4 +1,6 @@
 import os
+from collections import defaultdict
+
 from sqlalchemy import (create_engine, inspect, exists, Column, Unicode, String,
                         Integer, BigInteger, Boolean, DateTime)
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, TEXT
@@ -30,6 +32,11 @@ REMOTE_MYSQL_DB = {
 }
 
 
+# keeps track of whether we've defined each Posts table object yet
+# keys are forum names (or None for the default), values are Post objects
+posts_tables = {}
+
+
 def get_mysql_session(remote=True):
     # create MySQL database session
     if remote:
@@ -49,6 +56,9 @@ def get_post_db(forum=None):
         table = 'posts'
     else:
         table = 'posts_%s' % forum.replace('-', '_')
+
+    if forum in posts_tables:
+        return posts_tables[forum]
 
     class Post(Base):
         __tablename__ = table
@@ -78,6 +88,7 @@ def get_post_db(forum=None):
         is_flagged = Column(Boolean)
         is_spam = Column(Boolean)
 
+    posts_tables[forum] = Post
     return Post
 
 
