@@ -44,33 +44,41 @@ def get_mysql_session(remote=True):
     return engine, Session()
 
 
-class Post(Base):
-    __tablename__ = 'posts'
+def get_post_db(forum=None):
+    if forum is None:
+        table = 'posts'
+    else:
+        table = 'posts_%s' % forum.replace('-', '_')
 
-    id = Column(BigInteger, primary_key=True, autoincrement=False)
+    class Post(Base):
+        __tablename__ = table
 
-    ## relations
-    # this is here so that forums which arent in the "forums" table yet can be
-    # pulled down later
-    forum = Column(Unicode(255))
-    forum_pk = Column(BigInteger)
-    thread = Column(BigInteger)
-    author = Column(BigInteger)
-    parent = Column(BigInteger)
+        id = Column(BigInteger, primary_key=True, autoincrement=False)
 
-    ## data
-    raw_text = Column(MEDIUMTEXT(unicode=True))
-    time = Column(DateTime)
-    likes = Column(BigInteger)
-    dislikes = Column(BigInteger)
-    num_reports = Column(BigInteger)
+        ## relations
+        # this is here so that forums which arent in the "forums" table yet can be
+        # pulled down later
+        forum = Column(Unicode(255))
+        forum_pk = Column(BigInteger)
+        thread = Column(BigInteger)
+        author = Column(BigInteger)
+        parent = Column(BigInteger)
 
-    ## boolean attributes
-    is_approved = Column(Boolean)
-    is_edited = Column(Boolean)
-    is_deleted = Column(Boolean)
-    is_flagged = Column(Boolean)
-    is_spam = Column(Boolean)
+        ## data
+        raw_text = Column(MEDIUMTEXT(unicode=True))
+        time = Column(DateTime)
+        likes = Column(BigInteger)
+        dislikes = Column(BigInteger)
+        num_reports = Column(BigInteger)
+
+        ## boolean attributes
+        is_approved = Column(Boolean)
+        is_edited = Column(Boolean)
+        is_deleted = Column(Boolean)
+        is_flagged = Column(Boolean)
+        is_spam = Column(Boolean)
+
+    return Post
 
 
 class Forum(Base):

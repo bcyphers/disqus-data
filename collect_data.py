@@ -13,7 +13,7 @@ import time
 
 from dateutil.relativedelta import relativedelta
 from disqusapi import DisqusAPI, APIError, FormattingError
-from orm import Post, Forum, Base, get_mysql_session
+from orm import get_post_db, Forum, Base, get_mysql_session
 from query_doer import get_forum_counts
 from collections import defaultdict
 from numpy import linalg
@@ -50,7 +50,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('keyfile', type=str, nargs='+', help='path to api key file')
 ap.add_argument('--data-path', type=str, default=DATA_PATH,
                 help='path to data directory')
-ap.add_argument('--remote', type=bool, action='store_true',
+ap.add_argument('--remote', action='store_true',
                 help='connect to remote database')
 ap.add_argument('--forum', type=str, default=DATA_PATH,
                 help='forum from which to collect data')
@@ -736,15 +736,13 @@ class DataPuller(object):
             (('from forum %s ' % forum) if forum is not None else '') + \
             'between', start_time, 'and', stop_time
 
+        Post = get_post_db(forum=forum)
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
+        _, session = get_mysql_session()
 
-        if forum is not None:
-            # TODO: this is pretty hacky
-            Post.__tablename__ = 'posts_%s' % forum
-
-        last_ts_query = self.session.query(func.max(Post.time)).filter(
+        last_ts_query = session.query(func.max(Post.time)).filter(
             Post.time <= stop_time, Post.time >= start_time)
 
         real_min_ts = last_ts_query.first()[0]
@@ -755,7 +753,7 @@ class DataPuller(object):
         last_ts = start_ts
 
         if forum is not None:
-            forum_obj = self.session.query(Forum).filter(Forum.id == forum).first()
+            forum_obj = session.query(Forum).filter(Forum.id == forum).first()
             forum_id = forum
             forum_pk = forum_obj.pk
 
@@ -812,14 +810,14 @@ class DataPuller(object):
                                                              results[-1]['createdAt'])
             for p in results:
                 post_id = int(p['id'])
-                if self.session.query(Post).get(post_id):
+                if session.query(Post).get(post_id):
                     print 'post %d already exists in database' % post_id
                     continue
 
                 # query for forum if necessary
                 if forum is None:
                     forum_id = unicode(p['forum'])
-                    forum_obj = self.session.query(Forum).filter(Forum.id == forum_id).first()
+                    forum_obj = session.query(Forum).filter(Forum.id == forum_id).first()
                     if forum_obj is not None:
                         forum_pk = forum_obj.pk
                     else:
@@ -844,8 +842,8 @@ class DataPuller(object):
                             is_spam=bool(p['isSpam']))
 
                 try:
-                    self.session.add(post)
-                    self.session.commit()
+                    session.add(post)
+                    session.commit()
                 except Exception as e:
                     print
                     print e
@@ -1009,16 +1007,16 @@ if __name__ == '__main__':
     DATA_PATH = args.data_path
 
     if args.start_time is not None:
-        start_time = datetime.strptime(args.start_time, '%Y-%m-%dT%H:%M:%S')
+        start_time = datetime.datetime.strptime(args.start_time, '%Y-%m-%dT%H:%M:%S')
     if args.end_time is not None:
-        end_time = datetime.strptime(args.end_time, '%Y-%m-%dT%H:%M:%S')
+        end_time = datetime.datetime.strptime(args.end_time, '%Y-%m-%dT%H:%M:%S')
 
     while True:
         start_hour = datetime.datetime.now().hour
         for kf in args.keyfile:
             puller.load_key(kf)
             code = puller.pull_all_posts_window(start_time=start_time,
-                                                stop_time=end_time
+                                                stop_time=end_time,
                                                 forum=args.forum)
             #code = puller.pull_all_user_forums(400)
             #puller.pull_all_forum_activity()
