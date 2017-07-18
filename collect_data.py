@@ -740,7 +740,7 @@ class DataPuller(object):
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
-        _, session = get_mysql_session()
+        _, session = get_mysql_session(remote=args.remote)
 
         last_ts_query = session.query(func.max(Post.time)).filter(
             Post.time <= stop_time, Post.time >= start_time)

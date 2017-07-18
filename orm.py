@@ -37,7 +37,7 @@ REMOTE_MYSQL_DB = {
 posts_tables = {}
 
 
-def get_mysql_session(remote=True):
+def get_mysql_session(remote=False):
     # create MySQL database session
     if remote:
         engine = create_engine(URL(**REMOTE_MYSQL_DB))
