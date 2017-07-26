@@ -52,7 +52,7 @@ ap.add_argument('--data-path', type=str, default=DATA_PATH,
                 help='path to data directory')
 ap.add_argument('--remote', action='store_true',
                 help='connect to remote database')
-ap.add_argument('--forum', type=str, default=DATA_PATH,
+ap.add_argument('--forum', type=str, default=None,
                 help='forum from which to collect data')
 ap.add_argument('--start-time', type=str, default='2007-01-01T00:00:00',
                 help='starting timestamp')
@@ -736,7 +736,9 @@ class DataPuller(object):
             (('from forum %s ' % forum) if forum is not None else '') + \
             'between', start_time, 'and', stop_time
 
-        Post = get_post_db(forum=forum)
+        Post = get_post_db(forum=forum, start_time=start_time)
+        print 'storing in table', Post.__tablename__
+
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None

@@ -51,9 +51,9 @@ def get_mysql_session(remote=False):
     return engine, Session()
 
 
-def get_post_db(forum=None):
+def get_post_db(forum=None, start_time=None):
     if forum is None:
-        table = 'posts'
+        table = 'posts_%02d_%d' % (start_time.month, start_time.year)
     else:
         table = 'posts_%s' % forum.replace('-', '_')
 
@@ -75,8 +75,8 @@ def get_post_db(forum=None):
         parent = Column(BigInteger)
 
         ## data
-        raw_text = Column(MEDIUMTEXT(unicode=True))
-        time = Column(DateTime)
+        raw_text = Column(MEDIUMTEXT(charset='utf8mb4'))
+        time = Column(DateTime, index=True)
         likes = Column(BigInteger)
         dislikes = Column(BigInteger)
         num_reports = Column(BigInteger)
@@ -109,8 +109,8 @@ class Forum(Base):
     created_at = Column(DateTime)
     alexa_rank = Column(BigInteger)
     category = Column(Unicode(255), nullable=True)
-    description = Column(TEXT(unicode=True), nullable=True)
-    guidelines = Column(TEXT(unicode=True), nullable=True)
+    description = Column(TEXT(charset='utf8mb4'), nullable=True)
+    guidelines = Column(TEXT(charset='utf8mb4'), nullable=True)
     language = Column(String(10))
 
     # settings
