@@ -11,9 +11,13 @@ import warnings
 import numpy as np
 import pandas as pd
 
+import url_parse
+
 from bs4 import BeautifulSoup
 from collections import defaultdict, OrderedDict
 from gensim.models import Word2Vec
+from langdetect import detect, detect_langs
+from langdetect.lang_detect_exception import LangDetectException
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize import RegexpTokenizer
 from nltk.tokenize.casual import TweetTokenizer
@@ -34,19 +38,32 @@ warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
 
 class StemTokenizer(object):
-    BLACKLIST = ['http', 'https', 'www', 'jpg', 'png', 'com', 'disquscdn',
+    URL_STOPS = ['http', 'https', 'www', 'jpg', 'png', 'com', 'disquscdn',
                  'net', 'uploads', 'images', 'blockquote', '2017', '01', '02',
-                 'youtu', 'im']
+                 'youtu', 'im', '__link__']
 
     def __init__(self, stem=False):
         self.stem = stem
         self.stemmer = SnowballStemmer('english')
-        self.tokenizer = TweetTokenizer(preserve_case=False, reduce_len=True)
+        #self.tokenizer = TweetTokenizer(preserve_case=False, reduce_len=True)
+        # contractions and hyphenations count as one word
+        self.tokenizer = RegexpTokenizer('\w+(?:[/-\']\w+)*')
+        self.language_counts = defaultdict(int)
+        self.stopwords = stopwords.words('english') + self.URL_STOPS
 
     def __call__(self, doc):
-        stop = stopwords.words('english') + self.BLACKLIST
+        #try:
+            #langs = [l.lang for l in detect_langs(doc)]
+        #except LangDetectException as e:
+            #print 'could not detect language for "%s".' %doc
+            #return None
+
+        #if 'en' not in langs:
+            #return None
+
         out = []
         sentences = nltk.tokenize.sent_tokenize(doc)
+
         for s in sentences:
             for t in self.tokenizer.tokenize(s):
                 # exclude single-letter tokens
@@ -54,16 +71,27 @@ class StemTokenizer(object):
                     # optional: do stemming
                     if self.stem:
                         t = self.stemmer.stem(t)
+                    t = t.lower()
                     out.append(t)
         return out
 
 
-def clean_tokenize(text, stem=False):
+tokenize = StemTokenizer(False)
+
+class PostMeta(object):
+    """ Small class to store post metadata for sorting, etc. """
+    def __init__(self, id, thread, parent, time):
+        self.id = id
+        self.thread = thread
+        self.parent = parent
+        self.time = time
+
+def clean(text):
     """ returns a list of tokens """
     soup = BeautifulSoup(text, 'html.parser')
     text = soup.get_text()
-    tokenize = StemTokenizer(stem)
-    return tokenize(text)
+    text = re.sub(url_parse.WEB_URL_REGEX, '__link__', text)
+    return text
 
 
 def order_thread_posts(posts):
@@ -93,16 +121,20 @@ def order_thread_posts(posts):
 
 
 def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
-                        end_time=None):
+                        end_time=None, limit=5000000):
+    Post = get_post_db(None)
     engine, session = get_mysql_session()
 
     print "querying for posts%s..." % ((' from forum ' + forum) if forum else '' +
-                                       (' from user ' + author) if author else '')
+                                       (' from user %s' % author) if author else '')
     query = session.query(Post)
     if forum is not None:
         query = query.filter(Post.forum == forum)
     if author is not None:
-        query = query.filter(Post.author == author)
+        if type(author) == list:
+            query = query.filter(Post.author in authors)
+        else:
+            query = query.filter(Post.author == author)
     if adult:
         query = query.filter(Post.forum_pk == Forum.pk).\
                       filter(Forum.adult_content == 1)
@@ -111,18 +143,12 @@ def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
     if end_time is not None:
         query = query.filter(Post.time <= end_time)
 
-    query = query.limit(5000000)
+    query = query.limit(limit)
     df = pd.read_sql(query.statement, query.session.bind)
 
     print "creating post graph..."
-    class P(object):
-        def __init__(self, id, thread, parent, time):
-            self.id = id
-            self.thread = thread
-            self.parent = parent
-            self.time = time
 
-    posts = {pid: P(pid, df.thread[pid], df.parent[pid], df.time[pid])
+    posts = {pid: PostMeta(pid, df.thread[pid], df.parent[pid], df.time[pid])
              for pid in df.index}
 
     print len(posts), "found"
@@ -142,21 +168,148 @@ def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
         ordered_posts.extend(order_thread_posts(tposts))
 
     print "cleaning posts..."
-    return [clean_tokenize(df.raw_text[p.id]) for p in ordered_posts]
+    tokens = []
+    for p in ordered_posts:
+        t = tokenize(clean(df.raw_text[p.id]))
+        if t is not None:
+            tokens.append(t)
+    return tokens
 
 
-def get_forum_docs(forum):
-    _, session = get_mysql_session()
-    posts = session.query(Post.raw_text).filter(Post.forum == forum).all()
-    fname = '%s-docs.txt' % forum
-    with open(fname, 'w') as f:
-        doc = u''
-        for i, p in enumerate(posts):
-            doc_str = clean_tokenize(p[0])
-            doc += u'_*%d %s\n' % (i, doc_str)
-            if int((100. * i) / len(posts)) > int((100. * (i-1)) / len(posts)):
-                sys.stdout.write(' %d%% done\r' % (100. * i / len(posts)))
-                sys.stdout.flush()
+class VectorClassifier(object):
+    """
+    Use word2vec models trained on a variety of forum corpi to build a
+    document classifier
+    """
+    def __init__(self, forums, start_time=None, end_time=None):
+        # for each model, identify the words that differentiate it from the
+        # others
+        self.forums = forums
+        self.start_time = start_time
+        self.end_time = end_time
+        self.forum_posts = {}
+        self.train_models()
 
-        f.write(doc.encode('utf8'))
-        print 'docs written to', fname
+    def load_data(self, forum, limit=5000000):
+        """ load all posts for forum between start_time and end_time """
+        tokens = []
+        fname = './post_cache/%s.txt' % forum
+        self.forum_posts[forum] = []
+
+        if os.path.isfile(fname):
+            # load stuff if we can
+            print 'loading posts for forum %s...' % forum
+            with open(fname) as f:
+                for line in f:
+                    tokens.append(line.split())
+        else:
+            # otherwise query, clean, etc.
+            print 'querying for posts for forum %s...' % forum
+            Post = get_post_db(forum)
+            engine, session = get_mysql_session()
+            query = session.query(Post)
+            if self.start_time is not None:
+                query = query.filter(Post.time >= self.start_time)
+            if self.end_time is not None:
+                query = query.filter(Post.time <= self.end_time)
+
+            query = query.limit(limit)
+            df = pd.read_sql(query.statement, query.session.bind)
+
+            print 'cleaning %d posts...' % len(df)
+            for p in df.raw_text:
+                t = tokenize(clean(p))
+                if t is not None:
+                    tokens.append(t)
+
+            print 'saving cleaned posts...'
+            with open(fname, 'w') as f:
+                for t in tokens:
+                    tstr = ' '.join(t) + '\n'
+                    f.write(tstr.encode('utf8'))
+
+        self.forum_posts[forum] = tokens
+
+    def train_models(self):
+        self.models = {}
+        for forum in self.forums:
+            fname = './model_cache/%s.bin' % forum
+            if os.path.isfile(fname):
+                print 'loading model for forum %s...' % forum
+                self.models[forum] = Word2Vec.load(fname)
+                continue
+
+            if forum not in self.forum_posts:
+                self.load_data(forum)
+            posts = self.forum_posts[forum]
+
+            print 'training model for forum %s...' % forum
+            # we need hs=1, negative=0 to do scoring (use hierarchical softmax,
+            # no negative sampling)
+            model = Word2Vec(posts, size=100, window=5, min_count=10,
+                             workers=20, hs=1, negative=0)
+            model.save(fname)
+            self.models[forum] = model
+
+    def train_model_vectors(self, num_words=1000, vector_size=1000):
+        # what words are shared across all vocabs?
+        models = self.models.values()
+        overlap = set(models[0].wv.vocab.keys())
+        for m in models:
+            overlap &= set(m.wv.vocab.keys())
+
+        # remove stopwords
+        overlap = [w for w in overlap if w not in tokenize.stopwords]
+
+        print 'overlap size: %d words' % len(overlap)
+
+        # count the total number of words in each corpus
+        model_counts = {f: sum([m.wv.vocab[w].count for w in m.wv.vocab])
+                        for f, m in self.models.iteritems()}
+        word_scores = {}
+        for w in overlap:
+            # average portion of each corpus that the word comprises
+            word_scores[w] = sum([float(m.wv.vocab[w].count) / model_counts[f]
+                                  for f, m in self.models.iteritems()])
+
+        if num_words is not None:
+            top_words = sorted(overlap, key=lambda w: -word_scores[w])[:num_words]
+        else:
+            top_words = overlap[:]
+
+        probs = np.array([word_scores[w] for w in overlap])
+        probs /= sum(probs)
+        sample_vec = np.random.choice(overlap, vector_size, replace=False, p=probs)
+
+        # dataframe for each model
+        dfs = {}
+        for f, m in self.models.iteritems():
+            dfs[f] = pd.DataFrame(index=top_words, columns=sample_vec)
+            for w in top_words:
+                dfs[f].loc[w] = np.array([m.wv.similarity(w, w2) for w2 in
+                                          sample_vec])
+
+        print 'finished computing vectors for top %d words' % len(top_words)
+        self.word_diffs = pd.Series(data=np.zeros(len(top_words)),
+                                    index=top_words)
+
+        for i in range(len(self.forums)):
+            for j in range(i+1, len(self.forums)):
+                f1 = self.forums[i]
+                f2 = self.forums[j]
+                for w in top_words:
+                    self.word_diffs[w] += np.linalg.norm(dfs[f1].ix[w] -
+                                                         dfs[f2].ix[w])
+        self.dfs = dfs
+        self.word_diffs = self.word_diffs.sort_values()
+
+    def relevant(self, post):
+        # is there at least one "indicator" word in the post?
+        return len(set(post) & set(self.word_diffs[:100])) >= 1
+
+    def score(self, posts):
+        score = {}
+        relevant = [p for p in posts if self.relevant(p)]
+        for forum, m in self.models:
+            score[forum] = m.score(relevant)
+

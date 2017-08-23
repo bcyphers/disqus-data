@@ -805,8 +805,8 @@ class DataPuller(object):
             cursor = res.cursor['next']
             results = list(res)
             if not len(results):
-                # we're done
-                return 0
+                # we're done?
+                continue
 
             print 'storing %d posts between %s and %s...' % (len(results),
                                                              results[0]['createdAt'],
