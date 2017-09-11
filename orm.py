@@ -1,3 +1,4 @@
+import json
 import os
 from collections import defaultdict
 
@@ -10,26 +11,13 @@ from sqlalchemy.orm import sessionmaker
 
 Base = declarative_base()
 
-# MySQL database info
-LOCAL_MYSQL_DB = {
-    'drivername': 'mysql',
-    'username': 'bcyphers',
-    'host': 'localhost',
-    'port': 3306,
-    'password': os.environ['MYSQL_PASSWD'],
-    'database': 'disqus',
-    'query': {'charset': 'utf8mb4'},
-}
-
-REMOTE_MYSQL_DB = {
-    'drivername': 'mysql',
-    'username': 'bcyphers',
-    'host': '34.210.178.215',
-    'port': 3306,
-    'password': os.environ['MYSQL_PASSWD'],
-    'database': 'disqus',
-    'query': {'charset': 'utf8mb4'},
-}
+# try to load mysql connection info from a config file
+try:
+    with open('mysql-conf.json') as f:
+        mysql_settings = json.load(f)
+except IOError:
+    print "Please supply valid MySQL connection details in mysql-conf.json."
+    print "See example at mysql-conf.example.json."
 
 
 # keeps track of whether we've defined each Posts table object yet
@@ -37,13 +25,9 @@ REMOTE_MYSQL_DB = {
 posts_tables = {}
 
 
-def get_mysql_session(remote=False):
+def get_mysql_session():
     # create MySQL database session
-    if remote:
-        engine = create_engine(URL(**REMOTE_MYSQL_DB))
-    else:
-        engine = create_engine(URL(**LOCAL_MYSQL_DB))
-
+    engine = create_engine(URL(**mysql_settings))
     Base.metadata.create_all(bind=engine)
 
     Session = sessionmaker()

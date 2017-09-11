@@ -14,7 +14,7 @@ import time
 from dateutil.relativedelta import relativedelta
 from disqusapi import DisqusAPI, APIError, FormattingError
 from orm import get_post_db, Forum, Base, get_mysql_session
-from query_doer import get_forum_counts
+from query_data import get_forum_posts_count
 from collections import defaultdict
 from numpy import linalg
 from termcolor import colored

@@ -1,3 +1,5 @@
 *.csv
 secret.key
+keys/
+mysql-conf.json
 *.json

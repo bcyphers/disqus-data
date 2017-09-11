@@ -86,12 +86,11 @@ class PostMeta(object):
         self.parent = parent
         self.time = time
 
+
 def clean(text):
-    """ returns a list of tokens """
+    """ Remove html tags and URLs """
     soup = BeautifulSoup(text, 'html.parser')
-    text = soup.get_text()
-    text = re.sub(url_parse.WEB_URL_REGEX, '__link__', text)
-    return text
+    return re.sub(url_parse.WEB_URL_REGEX, '__link__', soup.get_text())
 
 
 def order_thread_posts(posts):
