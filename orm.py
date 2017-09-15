@@ -60,6 +60,7 @@ def get_post_db(forum=None, start_time=None):
 
         ## data
         raw_text = Column(MEDIUMTEXT(charset='utf8mb4'))
+        tokens = Column(MEDIUMTEXT(charset='utf8mb4'))
         time = Column(DateTime, index=True)
         likes = Column(BigInteger)
         dislikes = Column(BigInteger)

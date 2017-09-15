@@ -77,3 +77,39 @@ def get_user_post_patterns(session=None):
         counts[user][forum] = count
 
     return counts
+
+def tokenize_posts(forum):
+    """
+    Convert the raw_text for every one of a forum's comments to list of tokens.
+    Save as 'tokens' column in database.
+    This function processes 30 days of posts at a time.
+    """
+    if session is None:
+        _, session = get_mysql_session()
+
+    Post = get_post_db(forum)
+    engine, session = get_mysql_session()
+    tokenize = StemTokenizer(stem=False)
+
+    # find the time of the first post we have for this forum that doesn't have
+    # tokens
+    window_start = session.query(func.min(Post.time))\
+        .filter(Post.tokens == None).first()[0]
+    end_time = session.query(func.max(Post.time))\
+        .filter(Post.tokens == None).first()[0]
+
+    while window_start < end_time:
+        window_end = min(window_start + timedelta(days=30), end_time)
+        print "Tokenizing posts between %s and %s" % (window_start, window_end)
+
+        # query for all forum posts in our time window
+        query = session.query(Post)\
+            .filter(Post.time >= window_start and Post.time < window_end)\
+            .update(Post.tokens: tokenize(Post.raw_text))
+        session.commit()
+
+        #post_df = pd.read_sql(query.statement, query.session.bind)
+        #tokens = post_df.raw_text.apply(tokenize)
+
+        window_start += timedelta(days=30)
+
