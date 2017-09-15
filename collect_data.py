@@ -133,7 +133,7 @@ class DataPuller(object):
         self._forum_details = None
 
         self.forum_counts = None
-        _, self.session = get_mysql_session(remote=args.remote)
+        _, self.session = get_mysql_session()
 
     def __del__(self):
         self.session.close()
@@ -742,7 +742,7 @@ class DataPuller(object):
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
         cursor = None
-        _, session = get_mysql_session(remote=args.remote)
+        _, session = get_mysql_session()
 
         last_ts_query = session.query(func.max(Post.time)).filter(
             Post.time <= stop_time, Post.time >= start_time)
