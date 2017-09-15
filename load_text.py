@@ -62,6 +62,8 @@ class StemTokenizer(object):
             #return None
 
         out = []
+        soup = BeautifulSoup(text, 'html.parser')
+        doc = re.sub(url_parse.WEB_URL_REGEX, '__link__', soup.get_text())
         sentences = nltk.tokenize.sent_tokenize(doc)
 
         for s in sentences:
@@ -78,6 +80,7 @@ class StemTokenizer(object):
 
 tokenize = StemTokenizer(False)
 
+
 class PostMeta(object):
     """ Small class to store post metadata for sorting, etc. """
     def __init__(self, id, thread, parent, time):
@@ -85,12 +88,6 @@ class PostMeta(object):
         self.thread = thread
         self.parent = parent
         self.time = time
-
-
-def clean(text):
-    """ Remove html tags and URLs """
-    soup = BeautifulSoup(text, 'html.parser')
-    return re.sub(url_parse.WEB_URL_REGEX, '__link__', soup.get_text())
 
 
 def order_thread_posts(posts):
@@ -169,7 +166,7 @@ def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
     print "cleaning posts..."
     tokens = []
     for p in ordered_posts:
-        t = tokenize(clean(df.raw_text[p.id]))
+        t = tokenize(df.raw_text[p.id])
         if t is not None:
             tokens.append(t)
     return tokens
@@ -217,7 +214,7 @@ class VectorClassifier(object):
 
             print 'cleaning %d posts...' % len(df)
             for p in df.raw_text:
-                t = tokenize(clean(p))
+                t = tokenize(p)
                 if t is not None:
                     tokens.append(t)
 
@@ -301,6 +298,16 @@ class VectorClassifier(object):
                                                          dfs[f2].ix[w])
         self.dfs = dfs
         self.word_diffs = self.word_diffs.sort_values()
+
+
+        # TODO: find word pairs whose similarity correlates with partisanship
+        # find words whose overall shift in some direction correlates with partisanship
+        # find embedding sets which facilitate partisan shift
+        # e.g. which words' similarities to 'hillary' correlate with partisanship?
+
+        # 1. build w2v models for ~20 forums with allsides ratings, over same
+        # period of time
+
 
     def relevant(self, post):
         # is there at least one "indicator" word in the post?
