@@ -33,6 +33,9 @@ from sklearn.pipeline import make_pipeline
 from collect_data import *
 from orm import *
 
+
+TRUMP_START = datetime(2017, 1, 20, 17, 0, 0)
+
 # Ignore annoying warnings from BeautifulSoup
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
@@ -78,9 +81,6 @@ class StemTokenizer(object):
         return out
 
 
-tokenize = StemTokenizer(False)
-
-
 class PostMeta(object):
     """ Small class to store post metadata for sorting, etc. """
     def __init__(self, id, thread, parent, time):
@@ -117,15 +117,14 @@ def order_thread_posts(posts):
 
 
 def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
-                        end_time=None, limit=5000000):
-    Post = get_post_db(None)
+                        end_time=None, limit=5000000, order=True):
+    start_time = start_time or TRUMP_START
+    Post = get_post_db(forum, start_time)
     engine, session = get_mysql_session()
 
     print "querying for posts%s..." % ((' from forum ' + forum) if forum else '' +
                                        (' from user %s' % author) if author else '')
     query = session.query(Post)
-    if forum is not None:
-        query = query.filter(Post.forum == forum)
     if author is not None:
         if type(author) == list:
             query = query.filter(Post.author in authors)
@@ -142,34 +141,41 @@ def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
     query = query.limit(limit)
     df = pd.read_sql(query.statement, query.session.bind)
 
-    print "creating post graph..."
+    if order:
+        print "creating post graph..."
 
-    posts = {pid: PostMeta(pid, df.thread[pid], df.parent[pid], df.time[pid])
-             for pid in df.index}
+        posts = {pid: PostMeta(pid, df.thread[pid], df.parent[pid], df.time[pid])
+                 for pid in df.index}
 
-    print len(posts), "found"
-    print "ordering posts..."
+        print len(posts), "found"
+        print "ordering posts..."
 
-    ordered_posts = []
-    all_threads = OrderedDict()
-    # need to order threads by time, and have a set of posts for each thread
-    # (these can be ordered later)
-    for p in posts.values():
-        if p.thread not in all_threads:
-            all_threads[p.thread] = {p.id: p}
-        else:
-            all_threads[p.thread][p.id] = p
+        ordered_posts = []
+        all_threads = OrderedDict()
+        # need to order threads by time, and have a set of posts for each thread
+        # (these can be ordered later)
+        for p in posts.values():
+            if p.thread not in all_threads:
+                all_threads[p.thread] = {p.id: p}
+            else:
+                all_threads[p.thread][p.id] = p
 
-    for t, tposts in all_threads.items():
-        ordered_posts.extend(order_thread_posts(tposts))
+        for t, tposts in all_threads.items():
+            ordered_posts.extend(order_thread_posts(tposts))
 
-    print "cleaning posts..."
-    tokens = []
-    for p in ordered_posts:
-        t = tokenize(df.raw_text[p.id])
-        if t is not None:
-            tokens.append(t)
-    return tokens
+        posts = [df.raw_text[p.id] for p in ordered_posts]
+
+    else:
+        posts = df.raw_text
+
+    print "tokenizing posts..."
+    tokenize = StemTokenizer(False)
+    post_tokens = []
+    for p in posts:
+        tokens = tokenize(p)
+        if tokens is not None:
+            post_tokens.append(tokens)
+    return post_tokens
 
 
 class VectorClassifier(object):
@@ -185,6 +191,7 @@ class VectorClassifier(object):
         self.end_time = end_time
         self.forum_posts = {}
         self.train_models()
+        self.tokenize = StemTokenizer(False)
 
     def load_data(self, forum, limit=5000000):
         """ load all posts for forum between start_time and end_time """
@@ -214,7 +221,7 @@ class VectorClassifier(object):
 
             print 'cleaning %d posts...' % len(df)
             for p in df.raw_text:
-                t = tokenize(p)
+                t = self.tokenize(p)
                 if t is not None:
                     tokens.append(t)
 
@@ -255,7 +262,7 @@ class VectorClassifier(object):
             overlap &= set(m.wv.vocab.keys())
 
         # remove stopwords
-        overlap = [w for w in overlap if w not in tokenize.stopwords]
+        overlap = [w for w in overlap if w not in self.tokenize.stopwords]
 
         print 'overlap size: %d words' % len(overlap)
 

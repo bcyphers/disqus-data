@@ -20,7 +20,7 @@ crossorigin="anonymous"></script>
 
 Disqus is a comment service for websites. You've probably seen their ubiquitous little speech bubble around the web; maybe you even have an account. The company powers sites like The Atlantic, Rolling Stone, People, and Breitbart (although only three of those are advertised on their website). According to their literature, they serve 2 billion monthly unique users and 50 million comments per month from 196 countries. Disqus calls itself "the world's largest first-party data set."
 
-Recently, I got curious about how users from various parts of their network interact with each other. Luckily, they have a fantastic, free public API; it took me about 5 minutes to get a private key and start pulling down data. Here's what I did and what I found.
+A while ago, I got curious about how users from various parts of their network interact with each other. Luckily, they have a fantastic, free public API; it took me about 5 minutes to get a private key and start pulling down data. Here's what I did and what I found.
 
 ### Getting started
 
