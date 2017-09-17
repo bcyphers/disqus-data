@@ -11,39 +11,17 @@ import shutil
 import sys
 import time
 
-from dateutil.relativedelta import relativedelta
-from disqusapi import DisqusAPI, APIError, FormattingError
-from orm import get_post_db, Forum, Base, get_mysql_session
-from query_data import get_forum_posts_count
 from collections import defaultdict
+from dateutil.relativedelta import relativedelta
 from numpy import linalg
 from termcolor import colored
 from sqlalchemy.sql import func
 
+from disqusapi import DisqusAPI, APIError, FormattingError
+from orm import get_post_db, get_mysql_session, Forum
+from query_data import get_forum_posts_count
+from constants import DATA_PATH, TRUMP_START, DEDUP
 
-DEDUP = {
-    'channel-theatlanticdiscussions': 'theatlantic',
-    'theatlanticcities': 'theatlantic',
-    'theatlanticwire': 'theatlantic',
-    'in-focus': 'theatlantic',
-    'bwbeta': 'bloomberg',
-    'bloombergview': 'bloomberg',
-    'pbsnewshourformsrodeo': 'pbsnewshour',
-    'pj-instapundit': 'pj-media',
-    'spectator-new-blogs': 'spectator-new-www',
-    'spectatorwww': 'spectator-new-www',
-    'theamericanspectator': 'spectator-org',
-    'spectatororg': 'spectator-org',
-    'channel-theavclubafterdark': 'avclub',
-    'mtonews': 'mtocom',
-}
-
-# TODO: this is ugly
-DATA_PATH = os.path.dirname(os.path.abspath(__file__)) + '/data/'
-print DATA_PATH
-
-# the first instant of President Trump's tenure
-TRUMP_START = datetime.datetime(2017, 1, 20, 17, 0, 0)
 
 # arguments for the script: more to come
 ap = argparse.ArgumentParser()

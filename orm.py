@@ -1,6 +1,7 @@
 import json
 import os
 from collections import defaultdict
+from constants import mysql_settings
 
 from sqlalchemy import (create_engine, inspect, exists, Column, Unicode, String,
                         Integer, BigInteger, Boolean, DateTime, ForeignKey)
@@ -9,16 +10,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 
+# does some mysql shit
 Base = declarative_base()
-
-# try to load mysql connection info from a config file
-try:
-    with open('mysql-conf.json') as f:
-        mysql_settings = json.load(f)
-except IOError:
-    print "Please supply valid MySQL connection details in mysql-conf.json."
-    print "See example at mysql-conf.example.json."
-
 
 # keeps track of whether we've defined each Posts table object yet
 # keys are forum names (or None for the default), values are Post objects

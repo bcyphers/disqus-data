@@ -1,14 +1,14 @@
 from datetime import datetime, timedelta
-
-from orm import *
-from load_text import StemTokenizer
 from sqlalchemy import func, update
+
+from orm import get_post_db, get_mysql_session,
+from load_text import StemTokenizer
+from constants import TRUMP_START
+
 import plotly.graph_objs as go
 import plotly.offline as py
 import numpy as np
 import pandas as pd
-
-TRUMP_START = datetime(2017, 1, 20, 17, 0, 0)
 
 
 def get_forum_posts_count(year=2017, session=None):
