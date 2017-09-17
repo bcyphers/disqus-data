@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from sqlalchemy import func, update
 
-from orm import get_post_db, get_mysql_session,
+from orm import get_post_db, get_mysql_session
 from load_text import StemTokenizer
 from constants import TRUMP_START
 
