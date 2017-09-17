@@ -123,7 +123,7 @@ def tokenize_posts(forum, start_time=None, end_time=None):
                 print "tokenized %d posts" % (i + 1)
                 checkpoint = datetime.now()
 
-        print "finished"
+        print "committing update..."
         session.commit()
         window_start += timedelta(days=30)
 
