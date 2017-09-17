@@ -1,4 +1,5 @@
 import csv
+import datetime
 import json
 import nltk
 import os
@@ -30,11 +31,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, \
 from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
 
-from collect_data import *
+#from collect_data import *
 from orm import *
 
 
-TRUMP_START = datetime(2017, 1, 20, 17, 0, 0)
+TRUMP_START = datetime.datetime(2017, 1, 20, 17, 0, 0)
 
 # Ignore annoying warnings from BeautifulSoup
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
@@ -50,7 +51,7 @@ class StemTokenizer(object):
         self.stemmer = SnowballStemmer('english')
         #self.tokenizer = TweetTokenizer(preserve_case=False, reduce_len=True)
         # contractions and hyphenations count as one word
-        self.tokenizer = RegexpTokenizer('\w+(?:[/-\']\w+)*')
+        self.tokenizer = RegexpTokenizer('\w+(?:[-/\']\w+)*')
         self.language_counts = defaultdict(int)
         self.stopwords = stopwords.words('english') + self.URL_STOPS
 
@@ -65,9 +66,17 @@ class StemTokenizer(object):
             #return None
 
         out = []
-        soup = BeautifulSoup(text, 'html.parser')
-        doc = re.sub(url_parse.WEB_URL_REGEX, '__link__', soup.get_text())
-        sentences = nltk.tokenize.sent_tokenize(doc)
+        text = BeautifulSoup(doc, 'html.parser').get_text()
+
+        # this line is necessary because links surrounded by lots of periods or
+        # commas (......google.com,,,,,,,,,,,,,) break the url regex. Any
+        # combination of two or more periods or commas is scrubbed.
+        text = re.sub('\.[\.]+', '', text)
+        text = re.sub(',[,]+', '', text)
+        # replace all urls with __link__
+        text = re.sub(url_parse.WEB_URL_REGEX, '__link__', text)
+
+        sentences = nltk.tokenize.sent_tokenize(text)
 
         for s in sentences:
             for t in self.tokenizer.tokenize(s):
