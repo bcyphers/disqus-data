@@ -1,5 +1,4 @@
 import csv
-import datetime
 import json
 import nltk
 import os
@@ -16,6 +15,7 @@ import url_parse
 
 from bs4 import BeautifulSoup
 from collections import defaultdict, OrderedDict
+from datetime import datetime, timedelta
 from gensim.models import Word2Vec
 from langdetect import detect, detect_langs
 from langdetect.lang_detect_exception import LangDetectException
@@ -35,7 +35,7 @@ from sklearn.pipeline import make_pipeline
 from orm import *
 
 
-TRUMP_START = datetime.datetime(2017, 1, 20, 17, 0, 0)
+TRUMP_START = datetime(2017, 1, 20, 17, 0, 0)
 
 # Ignore annoying warnings from BeautifulSoup
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
@@ -219,7 +219,7 @@ class VectorClassifier(object):
             print 'querying for posts for forum %s...' % forum
             Post = get_post_db(forum)
             engine, session = get_mysql_session()
-            query = session.query(Post)
+            query = session.query(Post.id, Post.tokens)
             if self.start_time is not None:
                 query = query.filter(Post.time >= self.start_time)
             if self.end_time is not None:
@@ -227,17 +227,12 @@ class VectorClassifier(object):
 
             query = query.limit(limit)
             df = pd.read_sql(query.statement, query.session.bind)
-
-            print 'cleaning %d posts...' % len(df)
-            for p in df.raw_text:
-                t = self.tokenize(p)
-                if t is not None:
-                    tokens.append(t)
+            df.index = df.id
 
             print 'saving cleaned posts...'
             with open(fname, 'w') as f:
-                for t in tokens:
-                    tstr = ' '.join(t) + '\n'
+                for t in df.tokens:
+                    tstr = t + '\n'
                     f.write(tstr.encode('utf8'))
 
         self.forum_posts[forum] = tokens
@@ -253,6 +248,7 @@ class VectorClassifier(object):
 
             if forum not in self.forum_posts:
                 self.load_data(forum)
+
             posts = self.forum_posts[forum]
 
             print 'training model for forum %s...' % forum
@@ -280,7 +276,7 @@ class VectorClassifier(object):
                         for f, m in self.models.iteritems()}
         word_scores = {}
         for w in overlap:
-            # average portion of each corpus that the word comprises
+            # average portion of each corpus that the word represents
             word_scores[w] = sum([float(m.wv.vocab[w].count) / model_counts[f]
                                   for f, m in self.models.iteritems()])
 
@@ -315,16 +311,6 @@ class VectorClassifier(object):
         self.dfs = dfs
         self.word_diffs = self.word_diffs.sort_values()
 
-
-        # TODO: find word pairs whose similarity correlates with partisanship
-        # find words whose overall shift in some direction correlates with partisanship
-        # find embedding sets which facilitate partisan shift
-        # e.g. which words' similarities to 'hillary' correlate with partisanship?
-
-        # 1. build w2v models for ~20 forums with allsides ratings, over same
-        # period of time
-
-
     def relevant(self, post):
         # is there at least one "indicator" word in the post?
         return len(set(post) & set(self.word_diffs[:100])) >= 1
@@ -334,4 +320,76 @@ class VectorClassifier(object):
         relevant = [p for p in posts if self.relevant(p)]
         for forum, m in self.models:
             score[forum] = m.score(relevant)
+
+
+# TODO: find word pairs whose similarity correlates with partisanship
+# find words whose overall shift in some direction correlates with partisanship
+# find embedding sets which facilitate partisan shift
+# e.g. which words' similarities to 'hillary' correlate with partisanship?
+
+# 1. build w2v models for ~20 forums with allsides ratings, over same
+# period of time
+
+# 2. Treat users as terms, threads as documents, perform LSA to find
+# user types
+
+# Unrelated: lots of political argument involves political script kiddies
+
+
+class EmbeddingLinerUpper(object):
+    def __init__(self, forum):
+        self.forum = forum
+        self.models = {}
+        self.windows = {}
+
+    def build_models(self, start_time=TRUMP_START - timedelta(days=365),
+                     end_time=TRUMP_START, delta=timedelta(days=30)):
+        engine, session = get_mysql_session()
+        Post = get_post_db(forum=self.forum)
+        win_start = start_time
+        win_end = win_start + delta
+        idx = 0
+
+        while win_start <= end_time - delta:
+            self.windows[idx] = (win_start, win_end)
+            fname = 'w2v_models/%s_%s_%s.bin' % (self.forum, win_start, delta)
+
+            if os.path.isfile(fname):
+                print 'loading model for forum %s, date %s...' % (self.forum,
+                                                                  win_start)
+                self.models[idx] = Word2Vec.load(fname)
+            else:
+                query = session.query(Post.id, Post.tokens)\
+                    .filter(Post.time >= win_start)\
+                    .filter(Post.time < win_end)
+                print "querying for range (%s, %s)" % (win_start, win_end)
+
+                posts = [i[1].split() for i in query.all()]
+
+                print "building model"
+                # we need hs=1, negative=0 to do scoring (use hierarchical softmax,
+                # no negative sampling)
+                model = Word2Vec(posts, size=100, window=5, min_count=10,
+                                 workers=20, hs=1, negative=0)
+
+                print "saving"
+                model.save(fname, ignore=[])
+                self.models[idx] = model
+
+            win_start = win_end
+            win_end += delta
+            idx += 1
+
+    def line_up_vectors(self):
+        """ Use that funky transform to line up all the vector spaces """
+        pass
+
+    def plot_word_drift(self, word):
+        """ plot a single word's drift through word-space """
+        pass
+
+    def plot_pair_drift(self, word1, word2):
+        """ plot the change in the way two words relate to each other """
+        for i, model in self.models.items():
+            pass
 

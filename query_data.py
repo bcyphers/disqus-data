@@ -1,14 +1,16 @@
 from datetime import datetime, timedelta
-from sqlalchemy import func, update
+from collections import defaultdict
 
-from orm import get_post_db, get_mysql_session
-from load_text import StemTokenizer
-from constants import TRUMP_START
-
+from sqlalchemy import func, update, select
+from sqlalchemy import Table, Column, Integer, String, MetaData
 import plotly.graph_objs as go
 import plotly.offline as py
 import numpy as np
 import pandas as pd
+
+from orm import get_post_db, get_mysql_session
+from load_text import StemTokenizer
+from constants import TRUMP_START, DATE_FMT
 
 
 def get_forum_posts_count(year=2017, session=None):
@@ -23,19 +25,19 @@ def get_forum_posts_count(year=2017, session=None):
 
 def get_forum_posts_per_day(forum, session=None):
     """
-    Get the number of posts per day for a single forum
-    'forum' must be one of the forums with its own table
+    Get the number of posts per day for a single forum.
+    'forum' must be one of the forums with its own table.
     """
     if session is None:
         _, session = get_mysql_session()
     Post = get_post_db(forum=forum)
-    date_func = func.date_format(Post.time, '%Y-%m-%d')
+    date_func = func.date_format(Post.time, DATE_FMT)
     res = session.query(date_func, func.count(Post.id)) \
            .group_by(date_func).all()
 
-    results = {datetime.strptime(d, '%Y-%m-%d'): c for d, c in res}
-    day = datetime.strptime(res[0][0], '%Y-%m-%d')
-    end_day = datetime.strptime(res[-1][0], '%Y-%m-%d')
+    results = {datetime.strptime(d, DATE_FMT): c for d, c in res}
+    day = datetime.strptime(res[0][0], DATE_FMT)
+    end_day = datetime.strptime(res[-1][0], DATE_FMT)
     while day < end_day:
         day += timedelta(days=1)
         if day not in results:
@@ -62,16 +64,45 @@ def plot_posts_per_day(forum, window=7):
     py.plot([scatter, line], filename='%s-activity.html' % forum)
 
 
-def get_user_post_patterns(session=None):
+def get_user_forums(year=2017, cutoff=2):
     """
     Map users to the number of times they have posted in each forum
     """
-    if session is None:
-        _, session = get_mysql_session()
-    res = session.query(Post.author, Post.forum, func.count()) \
+    engine, _ = get_mysql_session()
+
+    metadata = MetaData()
+    table = Table('author_forums_%d' % year, metadata,
+                  Column('author', Integer),
+                  Column('forum', String),
+                  Column('count(*)', Integer))
+    conn = engine.connect()
+    result = conn.execute(select([table]))
+
+    user_docs = defaultdict(list)
+    user_counts = defaultdict(int)
+    # we're gonna treat each user as a document lol
+    for user, forum, count in result:
+        user_docs[user] += (int(count) * [str(forum)])
+        user_counts[user] += 1
+
+    for user, count in user_counts.iteritems():
+        if count < cutoff:
+            del user_docs[user]
+
+    return user_docs
+
+
+def get_user_threads(year=2017):
+    """
+    Map users to the number of times they have posted in each thread
+    """
+    engine, _ = get_mysql_session()
+
+    Post = get_post_db(start_time=datetime(year, 1, 1))
+    res = session.query(Post.author, Post.thread, func.count()) \
            .filter(Post.time >= TRUMP_START) \
            .filter(Post.author != -1) \
-           .group_by(Post.author, Post.forum).all()
+           .group_by(Post.author, Post.thread).all()
     counts = {}
     for user, forum, count in res:
         if user not in counts:
@@ -79,6 +110,7 @@ def get_user_post_patterns(session=None):
         counts[user][forum] = count
 
     return counts
+
 
 def tokenize_posts(forum, start_time=None, end_time=None):
     """

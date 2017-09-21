@@ -9,10 +9,10 @@ import sys
 import time
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from collections import defaultdict
-from matplotlib import colors as mcolors
+#from matplotlib import colors as mcolors
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize import RegexpTokenizer
 from nltk.corpus import stopwords
@@ -25,6 +25,7 @@ from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
 
 from collect_data import *
+from query_data import get_user_forums
 
 class StemTokenizer(object):
     BLACKLIST = ['http', 'https', 'www', 'jpg', 'png', 'com', 'disquscdn',
@@ -47,6 +48,25 @@ class StemTokenizer(object):
                     t = self.stemmer.stem(t)
                 out.append(t)
         return out
+
+
+# utility function for mapping top word features to their actual text
+def topic_name(fnames, feats):
+    return ', '.join('(%.3f) %s' % (feats[i], fnames[i]) for i in
+                     feats.argsort()[:-6:-1])
+
+
+def print_topics(vectorizer, model):
+    print
+    print 'Topics:'
+
+    word_names = vectorizer.get_feature_names()
+    topics = []
+    for group in model.components_:
+        topic = topic_name(word_names, group)
+        topics.append(topic)
+        print '%d.' % len(topics), topic
+    return topics
 
 
 class TopicModeler(object):
@@ -185,18 +205,7 @@ class TopicModeler(object):
         res = self.model.fit_transform(vectors)
         self.baseline_topics = sum(res) / len(res)
 
-        # utility function for mapping top word features to their actual text
-        best_feats = lambda fnames, feats: [fnames[i] for i in feats.argsort()[:-6:-1]]
-
-        print
-        print 'Topics:'
-
-        word_names = self.vectorizer.get_feature_names()
-        self.topics = []
-        for group in self.model.components_:
-            topic = ', '.join(best_feats(word_names, group))
-            self.topics.append(topic)
-            print '%d.' % len(self.topics), topic
+        self.topics = print_topics(self.vectorizer, self.model)
 
     def train(self, sample_size=1000):
         """
@@ -273,3 +282,46 @@ class TopicModeler(object):
 
         return pd.DataFrame(index=threads, columns=self.topics, data=res)
 
+
+def model_forums_as_topics(year=2017, cutoff=5, forum=None):
+    print 'querying'
+    user_docs = get_user_forums(year)
+
+    print 'sampling'
+    sample = {u: d for u, d in user_docs.iteritems()
+              if len(set(d)) >= cutoff}
+
+    if forum is not None:
+        for u, d in sample.items():
+            if forum in d:
+                sample[u] = [i for i in d if i != forum]
+            else:
+                del sample[u]
+
+    users, docs = zip(*sample.items())
+    strings = [' '.join(doc) for doc in docs]
+    print len(users), 'users'
+
+    print 'vectorizing'
+    vectorizer = TfidfVectorizer(min_df=5, max_features=1000,
+                                 preprocessor=lambda s: s,
+                                 tokenizer=lambda s: s.split())
+    vectors = vectorizer.fit_transform(strings)
+
+    print 'topic modeling'
+    lda = LatentDirichletAllocation(n_topics=20, max_iter=10,
+                                    learning_method='online',
+                                    learning_offset=50., random_state=0)
+    user_topics = lda.fit_transform(vectors)
+    print_topics(vectorizer, lda)
+
+    for i, u in enumerate(user_topics[:10]):
+        top_topics = np.argsort(u)[::-1]
+        print 'user', users[i]
+        for t in top_topics:
+            if u[t] < .1:
+                break
+            print u[t], topic_name(vectorizer.get_feature_names(),
+                                   lda.components_[t])
+
+    return strings, vectorizer, vectors, lda

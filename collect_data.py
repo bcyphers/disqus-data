@@ -20,7 +20,7 @@ from sqlalchemy.sql import func
 from disqusapi import DisqusAPI, APIError, FormattingError
 from orm import get_post_db, get_mysql_session, Forum
 from query_data import get_forum_posts_count
-from constants import DATA_PATH, TRUMP_START, DEDUP
+from constants import DATA_PATH, TRUMP_START, DEDUP, TIME_FMT
 
 
 # arguments for the script: more to come
@@ -988,9 +988,9 @@ if __name__ == '__main__':
     DATA_PATH = args.data_path
 
     if args.start_time is not None:
-        start_time = datetime.datetime.strptime(args.start_time, '%Y-%m-%dT%H:%M:%S')
+        start_time = datetime.datetime.strptime(args.start_time, TIME_FMT)
     if args.end_time is not None:
-        end_time = datetime.datetime.strptime(args.end_time, '%Y-%m-%dT%H:%M:%S')
+        end_time = datetime.datetime.strptime(args.end_time, TIME_FMT)
 
     while True:
         start_hour = datetime.datetime.now().hour

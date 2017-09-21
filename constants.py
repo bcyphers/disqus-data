@@ -15,6 +15,9 @@ DATA_PATH = os.path.dirname(os.path.abspath(__file__)) + '/data/'
 # the first instant of President Trump's tenure
 TRUMP_START = datetime.datetime(2017, 1, 20, 17, 0, 0)
 
+DATE_FMT = '%Y-%m-%d'
+TIME_FMT = '%Y-%m-%dT%H:%M:%S'
+
 DEDUP = {
     'channel-theatlanticdiscussions': 'theatlantic',
     'theatlanticcities': 'theatlantic',

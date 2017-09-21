@@ -192,11 +192,13 @@ def get_correlations(df):
     return pd.DataFrame(columns=df.index, index=df.index,
                         data=np.corrcoef(df.values.astype(float)))
 
+
 def top_correlations(cor, forum, n=10):
     cor[forum][forum] = 0
     top = cor[forum].sort_values(ascending=False)[:n]
     for i, f in enumerate(top.index):
         print '%d. %s: %.3f' % (i+1, f, cor[forum][f])
+
 
 def print_correlations(df):
     for i, arr in enumerate(np.corrcoef(df.values.astype(float))):
