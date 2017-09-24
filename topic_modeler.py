@@ -24,36 +24,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, \
 from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
 
-from collect_data import *
 from query_data import get_user_forums
-
-class StemTokenizer(object):
-    BLACKLIST = ['http', 'https', 'www', 'jpg', 'png', 'com', 'disquscdn',
-                 'net', 'uploads', 'images', 'blockquote', '2017', '01', '02',
-                 'youtu', 'im']
-
-    def __init__(self, stem=False):
-        self.stem = stem
-        self.stemmer = SnowballStemmer('english')
-        self.tokenizer = RegexpTokenizer(r'\w+')
-
-    def __call__(self, doc):
-        stop = stopwords.words('english') + self.BLACKLIST
-        out = []
-        for t in self.tokenizer.tokenize(doc):
-            # exclude single-letter tokens
-            if t not in stop and len(t) >= 2:
-                # optional: do stemming
-                if self.stem:
-                    t = self.stemmer.stem(t)
-                out.append(t)
-        return out
+from load_text import StemTokenizer
 
 
 # utility function for mapping top word features to their actual text
 def topic_name(fnames, feats):
-    return ', '.join('(%.3f) %s' % (feats[i], fnames[i]) for i in
-                     feats.argsort()[:-6:-1])
+    total = sum(feats)
+    return  ', '.join('(%.2f) %s' % (feats[i] / total, fnames[i])
+                      for i in feats.argsort()[:-6:-1])
 
 
 def print_topics(vectorizer, model):
@@ -70,12 +49,12 @@ def print_topics(vectorizer, model):
 
 
 class TopicModeler(object):
-    TFIDF = 'tfidf'
-    TF = 'tf'
-    HASH = 'hash'
+    TFIDF = 'tfidf'     # term frequency-inverse document frequency
+    TF = 'tf'           # plain old term frequency
+    HASH = 'hash'       # terms are hashed into a smaller space (e.g. 1000)
     HASH_IDF = 'hash-idf'
-    NMF = 'nmf'  # Non-Negative Matrix Factorization
-    LDA = 'lda'  # Latent Dirichlet Allocation
+    NMF = 'nmf'         # Non-Negative Matrix Factorization
+    LDA = 'lda'         # Latent Dirichlet Allocation
 
     def __init__(self, data, vector_type=TFIDF, model_type=NMF, n_features=1000,
                  n_topics=40):
@@ -106,7 +85,6 @@ class TopicModeler(object):
         except IOError:
             print 'data for thread', tid, 'is no good'
             del self.data.thread_posts[tid]
-            save_json(self.data.thread_posts, 'thread_posts')
             return ''
 
     def load_forum_thread(self, forum):
@@ -283,20 +261,25 @@ class TopicModeler(object):
         return pd.DataFrame(index=threads, columns=self.topics, data=res)
 
 
-def model_forums_as_topics(year=2017, cutoff=5, forum=None):
+def model_forums_as_topics(year=2017, cutoff=5, forum=None, n_topics=20):
     print 'querying'
     user_docs = get_user_forums(year)
 
     print 'sampling'
     sample = {u: d for u, d in user_docs.iteritems()
               if len(set(d)) >= cutoff}
+    # number of posts each user made
+    user_count = {}
 
     if forum is not None:
         for u, d in sample.items():
             if forum in d:
                 sample[u] = [i for i in d if i != forum]
+                user_count[u] = len([i for i in d if i == forum])
             else:
                 del sample[u]
+    else:
+        user_count = {u: len(d) for u, d in sample.iteritems()}
 
     users, docs = zip(*sample.items())
     strings = [' '.join(doc) for doc in docs]
@@ -309,19 +292,29 @@ def model_forums_as_topics(year=2017, cutoff=5, forum=None):
     vectors = vectorizer.fit_transform(strings)
 
     print 'topic modeling'
-    lda = LatentDirichletAllocation(n_topics=20, max_iter=10,
+    lda = LatentDirichletAllocation(n_topics=n_topics, max_iter=10,
                                     learning_method='online',
                                     learning_offset=50., random_state=0)
-    user_topics = lda.fit_transform(vectors)
-    print_topics(vectorizer, lda)
+    user_topics = {users[i]: vec for i, vec in
+                   enumerate(lda.fit_transform(vectors))}
+    topic_names = print_topics(vectorizer, lda)
 
-    for i, u in enumerate(user_topics[:10]):
-        top_topics = np.argsort(u)[::-1]
-        print 'user', users[i]
-        for t in top_topics:
-            if u[t] < .1:
-                break
-            print u[t], topic_name(vectorizer.get_feature_names(),
-                                   lda.components_[t])
+    top_topics = {t: 0 for t in range(n_topics)}
+    sum_topics = {t: 0 for t in range(n_topics)}
+    for u, vec in user_topics.iteritems():
+        top_topic = np.argsort(vec)[-1]
+        top_topics[top_topic] += user_count[u]
+        for t, val in enumerate(vec):
+            sum_topics[t] += val * user_count[u]
 
-    return strings, vectorizer, vectors, lda
+    print
+    print 'Most common top topics:'
+    for t, count in sorted(top_topics.items(), key=lambda i: -i[1]):
+        print '%d: %s' % (count, topic_names[t])
+
+    print
+    print 'Top topics overall:'
+    for t, count in sorted(sum_topics.items(), key=lambda i: -i[1]):
+        print '%.2f: %s' % (count, topic_names[t])
+
+    return strings, vectorizer, vectors, lda, sum_topics, top_topics
