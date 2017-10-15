@@ -739,7 +739,7 @@ class DataPuller(object):
 
         # loop indefinitely, gathering posts data
         while True:
-            # pull another frame of posts posts
+            # pull another frame of posts
             print 'pulling posts beginning %s...' % datetime.datetime.fromtimestamp(start_ts)
             try:
                 kwargs = {'forum': ':all',
@@ -775,6 +775,8 @@ class DataPuller(object):
                 else:
                     return code
             except FormattingError as err:
+                # Not sure what causes these, but sometimes the response is
+                # un-parseable. In this case we just try again
                 print err
                 cursor = None
                 start_ts = last_ts
@@ -804,6 +806,11 @@ class DataPuller(object):
                     else:
                         forum_pk = None
 
+                # process post into tokens and store them. It's easier to do
+                # this ahead of time.
+                tokenize = StemTokenizer(False)
+                tokens = ' '.join(tokenize(p['raw_message']))
+
                 # if it doesn't exist...
                 post = Post(id=post_id,
                             forum=forum_id,
@@ -812,6 +819,7 @@ class DataPuller(object):
                             author=int(p['author'].get('id', -1)),
                             parent=int(p['parent'] or -1),
                             raw_text=p['raw_message'],
+                            tokens=tokens,
                             time=p['createdAt'],
                             likes=int(p['likes']),
                             dislikes=int(p['dislikes']),

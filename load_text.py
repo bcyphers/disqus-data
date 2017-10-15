@@ -70,9 +70,13 @@ class StemTokenizer(object):
 
         # this line is necessary because links surrounded by lots of periods or
         # commas (......google.com,,,,,,,,,,,,,) break the url regex. Any
-        # combination of two or more periods or commas is scrubbed.
-        text = re.sub('\.[\.]+', '', text)
-        text = re.sub(',[,]+', '', text)
+        # combination of two or more periods or commas is shortened.
+        text = re.sub('\.[\.]+', '.', text)
+        text = re.sub(',[,]+', ',', text)
+
+        # replace unicode non-breaking spaces with normal spaces
+        text = re.sub(u'\xa0', u' ', text)
+
         # replace all urls with __link__
         text = re.sub(url_parse.WEB_URL_REGEX, '__link__', text)
 

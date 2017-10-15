@@ -111,8 +111,7 @@ def get_user_threads(year=2017):
 
     return counts
 
-
-def tokenize_posts(forum, start_time=None, end_time=None):
+def tokenize_posts(table=None, forum=None, start_time=None, end_time=None):
     """
     Convert the raw_text for every one of a forum's comments to list of tokens.
     Save as 'tokens' column in database.
@@ -120,7 +119,7 @@ def tokenize_posts(forum, start_time=None, end_time=None):
     """
     _, session = get_mysql_session()
 
-    Post = get_post_db(forum)
+    Post = table or get_post_db(forum)
     posts = Post.__table__
     engine, session = get_mysql_session()
     tokenize = StemTokenizer(stem=False)
@@ -138,14 +137,14 @@ def tokenize_posts(forum, start_time=None, end_time=None):
     window_start = start_time
     while window_start < end_time:
         window_end = min(window_start + timedelta(days=30), end_time)
-        print "querying for posts from %s between %s and %s" % (forum, window_start, window_end)
+        print "querying for posts from %s between %s and %s" % (posts, window_start, window_end)
 
         # query for all forum posts in our time window
         query = session.query(Post)\
             .filter(Post.time >= window_start)\
             .filter(Post.time < window_end)\
             .all()
-        print "found %d posts for %s, tokenizing..." % (len(query), forum)
+        print "found %d posts, tokenizing..." % len(query)
 
         # tokenize each post and update the 'tokens' column
         checkpoint = datetime.now()
