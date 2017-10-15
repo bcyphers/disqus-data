@@ -20,6 +20,10 @@ pip install cython
 pip install -r requirements.txt
 ```
 
+Install nltk packages
+```
+python -m nltk.downloader all
+```
 
 ### Files
 Python scripts are in the main directory. 

@@ -17,8 +17,8 @@ from bs4 import BeautifulSoup
 from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
 from gensim.models import Word2Vec
-from langdetect import detect, detect_langs
-from langdetect.lang_detect_exception import LangDetectException
+#from langdetect import detect, detect_langs
+#from langdetect.lang_detect_exception import LangDetectException
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize import RegexpTokenizer
 from nltk.tokenize.casual import TweetTokenizer
@@ -194,23 +194,27 @@ def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
 class VectorClassifier(object):
     """
     Use word2vec models trained on a variety of forum corpi to build a
-    document classifier
+    document classifier. The goal is, for each Word2Vec model, to identify the
+    words that differentiate it most from the other models.
     """
-    def __init__(self, forums, start_time=None, end_time=None):
-        # for each model, identify the words that differentiate it from the
-        # others
-        self.forums = forums
+    def __init__(self, forums=None, start_time=None, end_time=None, limit=None):
+        if forums is None:
+            self.forums = []
+            with open('./all_forums.txt') as f:
+                for line in f:
+                    self.forums.append(line.strip())
+        else:
+            self.forums = forums
+
         self.start_time = start_time
         self.end_time = end_time
-        self.forum_posts = {}
-        self.train_models()
+        self.limit = limit
         self.tokenize = StemTokenizer(False)
 
-    def load_data(self, forum, limit=5000000):
+    def load_data(self, forum):
         """ load all posts for forum between start_time and end_time """
         tokens = []
         fname = './post_cache/%s.txt' % forum
-        self.forum_posts[forum] = []
 
         if os.path.isfile(fname):
             # load stuff if we can
@@ -221,7 +225,7 @@ class VectorClassifier(object):
         else:
             # otherwise query, clean, etc.
             print 'querying for posts for forum %s...' % forum
-            Post = get_post_db(forum)
+            Post = get_post_db(forum=forum)
             engine, session = get_mysql_session()
             query = session.query(Post.id, Post.tokens)
             if self.start_time is not None:
@@ -229,17 +233,23 @@ class VectorClassifier(object):
             if self.end_time is not None:
                 query = query.filter(Post.time <= self.end_time)
 
-            query = query.limit(limit)
+            query = query.limit(self.limit)
             df = pd.read_sql(query.statement, query.session.bind)
             df.index = df.id
 
+            tokens = [t for t in df.tokens if t is not None]
+            if not len(tokens):
+                print 'forum is not tokenized.'
+                return None
+
             print 'saving cleaned posts...'
             with open(fname, 'w') as f:
-                for t in df.tokens:
-                    tstr = t + '\n'
-                    f.write(tstr.encode('utf8'))
+                for t in tokens:
+                    if t is not None:
+                        tstr = t + '\n'
+                        f.write(tstr.encode('utf8'))
 
-        self.forum_posts[forum] = tokens
+        return tokens
 
     def train_models(self):
         self.models = {}
@@ -250,16 +260,15 @@ class VectorClassifier(object):
                 self.models[forum] = Word2Vec.load(fname)
                 continue
 
-            if forum not in self.forum_posts:
-                self.load_data(forum)
+            posts = self.load_data(forum)
+            if posts is None:
+                continue
 
-            posts = self.forum_posts[forum]
-
-            print 'training model for forum %s...' % forum
+            print 'training model for forum %s on %d posts' % (forum, len(posts))
             # we need hs=1, negative=0 to do scoring (use hierarchical softmax,
             # no negative sampling)
             model = Word2Vec(posts, size=100, window=5, min_count=10,
-                             workers=20, hs=1, negative=0)
+                             workers=32, hs=1, negative=0)
             model.save(fname)
             self.models[forum] = model
 

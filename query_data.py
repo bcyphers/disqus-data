@@ -158,3 +158,4 @@ def tokenize_posts(table=None, forum=None, start_time=None, end_time=None):
         session.commit()
         window_start += timedelta(days=30)
 
+# TODO: pull out URLs from posts
