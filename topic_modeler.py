@@ -266,8 +266,10 @@ def model_forums_as_topics(year=2017, cutoff=5, forum=None, n_topics=20):
     user_docs = get_user_forums(year)
 
     print 'sampling'
+    # only include users who have posted in enough different forums, and exclude
+    # anonymous users (uid == -1)
     sample = {u: d for u, d in user_docs.iteritems()
-              if len(set(d)) >= cutoff}
+              if len(set(d)) >= cutoff and u != -1}
     # number of posts each user made
     user_count = {}
 
@@ -278,12 +280,15 @@ def model_forums_as_topics(year=2017, cutoff=5, forum=None, n_topics=20):
                 user_count[u] = len([i for i in d if i == forum])
             else:
                 del sample[u]
+        if len(sample) == 0:
+            print "No posters in forum '%s' found!"
+            return
     else:
         user_count = {u: len(d) for u, d in sample.iteritems()}
 
     users, docs = zip(*sample.items())
+    print len(users), 'users with', sum(user_count.values()), 'posts'
     strings = [' '.join(doc) for doc in docs]
-    print len(users), 'users'
 
     print 'vectorizing'
     vectorizer = TfidfVectorizer(min_df=5, max_features=1000,
@@ -317,4 +322,4 @@ def model_forums_as_topics(year=2017, cutoff=5, forum=None, n_topics=20):
     for t, count in sorted(sum_topics.items(), key=lambda i: -i[1]):
         print '%.2f: %s' % (count, topic_names[t])
 
-    return strings, vectorizer, vectors, lda, sum_topics, top_topics
+    return strings, vectorizer, vectors, lda, users, user_topics
