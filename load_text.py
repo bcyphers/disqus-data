@@ -10,7 +10,6 @@ import time
 import warnings
 import numpy as np
 import pandas as pd
-
 import url_parse
 
 from bs4 import BeautifulSoup
@@ -30,9 +29,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, \
                                             HashingVectorizer, TfidfTransformer
 from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
+from sqlalchemy import select, MetaData
+from sqlalchemy.sql import and_, or_, not_
 
-#from collect_data import *
 from orm import *
+from word2vec_align import smart_align_gensim
 
 
 TRUMP_START = datetime(2017, 1, 20, 17, 0, 0)
@@ -272,6 +273,37 @@ class VectorClassifier(object):
             model.save(fname)
             self.models[forum] = model
 
+    def align_vectors(self):
+        # use the model with the biggest vocab size as the reference
+        items = sorted(self.models.items(),
+                       key=lambda i: -len(i[1].wv.vocab.keys()))
+        ref_model = items[0][1]
+        for k, m in items[1:]:
+            m.wv = smart_align_gensim(ref_model.wv, m.wv)
+
+    def get_forum_biases(self):
+        self.forum_leanings = {}
+        for f in self.models:
+            engine, session = get_mysql_session()
+            meta = MetaData(bind=engine, reflect=True)
+            allsides_forums = meta.tables['allsides_forums']
+            allsides = meta.tables['allsides']
+
+            pk = session.query(Forum.pk).filter(Forum.id == f).first()
+            if not pk:
+                continue
+            pk = pk[1]
+
+            select_ = select([allsides, allsides_forums]).where(
+                                  and_(allsides.c.id == allsides_forums.c.allsides_id,
+                                       allsides_forums.c.forum_pk == pk))
+
+            conn = engine.connect()
+            res = conn.execute(select_).first()
+
+            if res:
+                self.forum_leanings[f] = res[3]
+
     def train_model_vectors(self, num_words=1000, vector_size=1000):
         # what words are shared across all vocabs?
         models = self.models.values()
@@ -334,6 +366,12 @@ class VectorClassifier(object):
         for forum, m in self.models:
             score[forum] = m.score(relevant)
 
+    def align_embeddings(self):
+        """
+        After all models have been trained, map them all to the same vector
+        space so that we can compare embeddings across models.
+        """
+
 
 # TODO: find word pairs whose similarity correlates with partisanship
 # find words whose overall shift in some direction correlates with partisanship
@@ -349,7 +387,7 @@ class VectorClassifier(object):
 # Unrelated: lots of political argument involves political script kiddies
 
 
-class EmbeddingLinerUpper(object):
+class EmbeddingAligner(object):
     def __init__(self, forum):
         self.forum = forum
         self.models = {}

@@ -113,6 +113,5 @@ class AllSidesEntry(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(Unicode(100))
-    forum_pk = Column(BigInteger, ForeignKey('forums.pk'))
     bias = Column(Integer)
     category = Column(String(50))
