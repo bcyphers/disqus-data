@@ -32,6 +32,10 @@ from sklearn.pipeline import make_pipeline
 from sqlalchemy import select, MetaData
 from sqlalchemy.sql import and_, or_, not_
 
+import plotly
+import plotly.plotly as py
+import plotly.graph_objs as go
+
 from orm import *
 from word2vec_align import smart_align_gensim
 
@@ -211,51 +215,133 @@ class VectorClassifier(object):
         self.end_time = end_time
         self.limit = limit
         self.tokenize = StemTokenizer(False)
+        self.stopwords = stopwords.words('english')
 
     def load_data(self, forum):
-        """ load all posts for forum between start_time and end_time """
-        tokens = []
+        """
+        Load all posts for forum between start_time and end_time.
+        If present on the local file system, load and return that; otherwise
+        pull data from the database.
+        """
+        posts = []
         fname = './post_cache/%s.txt' % forum
 
         if os.path.isfile(fname):
             # load stuff if we can
             print 'loading posts for forum %s...' % forum
             with open(fname) as f:
-                for line in f:
-                    tokens.append(line.split())
+                for l in f:
+                    posts.append(l.decode('utf8').strip())
+            return posts
+
+        # otherwise query, clean, etc.
+        print 'querying for posts for forum %s...' % forum
+        Post = get_post_db(forum=forum)
+        engine, session = get_mysql_session()
+        query = session.query(Post.id, Post.tokens)
+        if self.start_time is not None:
+            query = query.filter(Post.time >= self.start_time)
+        if self.end_time is not None:
+            query = query.filter(Post.time <= self.end_time)
+
+        query = query.limit(self.limit)
+        df = pd.read_sql(query.statement, query.session.bind)
+        df.index = df.id
+
+        posts = [t for t in df.tokens if t is not None]
+        if not len(posts):
+            print 'forum is not tokenized.'
+            return None
+
+        print 'saving cleaned posts...'
+        with open(fname, 'w') as f:
+            for p in posts:
+                if p is not None:
+                    tstr = t + '\n'
+                    f.write(tstr.encode('utf8'))
+
+        return posts
+
+    def sub_relevant_ngrams(self, forum, min_frac=.2):
+        """
+        For the given forum, find a set of phrases (n-grams of words) that
+        appear often enough together to be considered their own tokens. This is
+        somewhat similar to the method used by gensim
+        (https://radimrehurek.com/gensim/models/phrases.html#module-gensim.models.phrases)
+        but we ignore stopwords and have a stricter threshold for phrases.
+        """
+        fname = './post_cache_tuples/%s.txt' % forum
+        if os.path.isfile(fname):
+            return None
+
+        docs = self.load_data(forum)
+
+        print 'training count vectorizer...'
+        cv = CountVectorizer(ngram_range=(1,3), min_df=1e-5,
+                             tokenizer=lambda l: l.split())
+        if len(docs) > 1e6:
+            doc_sample = [docs[i] for i in
+                          np.random.choice(len(docs), size=int(1e6))]
         else:
-            # otherwise query, clean, etc.
-            print 'querying for posts for forum %s...' % forum
-            Post = get_post_db(forum=forum)
-            engine, session = get_mysql_session()
-            query = session.query(Post.id, Post.tokens)
-            if self.start_time is not None:
-                query = query.filter(Post.time >= self.start_time)
-            if self.end_time is not None:
-                query = query.filter(Post.time <= self.end_time)
+            doc_sample = docs
+        cv.fit(doc_sample)
 
-            query = query.limit(self.limit)
-            df = pd.read_sql(query.statement, query.session.bind)
-            df.index = df.id
+        print 'transforming text sample...'
+        countvec = np.zeros((1, len(cv.vocabulary_)))
+        for i in range(0, len(doc_sample)/1000 + 1):
+            combined = u' '.join(doc_sample[i*1000:(i+1)*1000])
+            countvec += cv.transform([combined]).todense()
 
-            tokens = [t for t in df.tokens if t is not None]
-            if not len(tokens):
-                print 'forum is not tokenized.'
-                return None
+        print 'summing up counts...'
+        counts = {w: countvec[0, i] for w, i in cv.vocabulary_.iteritems()}
+        word_counts = defaultdict(int)
+        for t, c in counts.iteritems():
+            for w in t.split():
+                word_counts[w] += c
 
-            print 'saving cleaned posts...'
-            with open(fname, 'w') as f:
-                for t in tokens:
-                    if t is not None:
-                        tstr = t + '\n'
-                        f.write(tstr.encode('utf8'))
+        tuples = [w for w in counts if len(w.split()) > 1]
+        filtered = []
 
-        return tokens
+        print 'filtering %d tuples...' % len(tuples)
+        for t in tuples:
+            words = t.split()
+            if len([w for w in words if w not in self.stopwords]) <= 1:
+                continue
+            for w in t.split():
+                if w not in self.stopwords and \
+                        counts[t] < word_counts[w] * min_frac:
+                    break
+            else:
+                filtered.append(t)
 
-    def train_models(self):
+        print filtered
+
+        print 'writing new tuples to file...'
+        replacements = {t: t.replace(' ', '_') for t in filtered}
+        rep = dict((re.escape(k), v) for k, v in
+                   replacements.iteritems())
+        pattern = re.compile("|".join(rep.keys()))
+        text = pattern.sub(lambda m:
+                           rep[re.escape(m.group(0))], text)
+
+        with open(fname, 'w') as f:
+            for d in docs:
+                d = pattern.sub(lambda m: rep[re.escape(m.group(0))], d)
+                f.write((d + '\n').encode('utf8'))
+
+        return filtered
+
+    def train_models(self, max_posts=int(5e6)):
+        """
+        Train Word2Vec models on each of the forums in self.forums.
+        This will call load_data() on each forum to either load post data from
+        the file system or query it from the database.
+        If models already exist in ./model_cache/, those models will be loaded
+        instead of re-trained.
+        """
         self.models = {}
         for forum in self.forums:
-            fname = './model_cache/%s.bin' % forum
+            fname = './model_cache_ngram/%s.bin' % forum
             if os.path.isfile(fname):
                 print 'loading model for forum %s...' % forum
                 self.models[forum] = Word2Vec.load(fname)
@@ -265,6 +351,15 @@ class VectorClassifier(object):
             if posts is None:
                 continue
 
+            if len(posts) > max_posts:
+                print 'Too many posts found (%d). Sampling %d posts...' % \
+                    (len(posts), max_posts)
+                posts = [posts[i] for i in
+                         np.random.choice(len(posts), size=max_posts)]
+
+            for i in range(len(posts)):
+                posts[i] = posts[i].split()
+
             print 'training model for forum %s on %d posts' % (forum, len(posts))
             # we need hs=1, negative=0 to do scoring (use hierarchical softmax,
             # no negative sampling)
@@ -273,16 +368,12 @@ class VectorClassifier(object):
             model.save(fname)
             self.models[forum] = model
 
-    def align_vectors(self):
-        # use the model with the biggest vocab size as the reference
-        items = sorted(self.models.items(),
-                       key=lambda i: -len(i[1].wv.vocab.keys()))
-        ref_model = items[0][1]
-        for k, m in items[1:]:
-            m.wv = smart_align_gensim(ref_model.wv, m.wv)
-
     def get_forum_biases(self):
-        self.forum_leanings = {}
+        """
+        Load allsides bias ratings from the database for each of the forums in
+        self.forums. Store all ratings in self.forum_biases.
+        """
+        self.forum_biases = {}
         for f in self.models:
             engine, session = get_mysql_session()
             meta = MetaData(bind=engine, reflect=True)
@@ -292,7 +383,7 @@ class VectorClassifier(object):
             pk = session.query(Forum.pk).filter(Forum.id == f).first()
             if not pk:
                 continue
-            pk = pk[1]
+            pk = pk[0]
 
             select_ = select([allsides, allsides_forums]).where(
                                   and_(allsides.c.id == allsides_forums.c.allsides_id,
@@ -302,9 +393,90 @@ class VectorClassifier(object):
             res = conn.execute(select_).first()
 
             if res:
-                self.forum_leanings[f] = res[3]
+                self.forum_biases[f] = res[2]
 
-    def train_model_vectors(self, num_words=1000, vector_size=1000):
+    def align_embeddings(self):
+        """
+        After all models have been trained, align their vector spaces with
+        Procrustes superimposition (https://en.wikipedia.org/wiki/Procrustes_analysis)
+        so that we can compare embeddings across models.
+        """
+        # use the model with the biggest vocab size as the first reference
+        items = sorted(self.models.items(),
+                       key=lambda i: -len(i[1].wv.vocab.keys()))
+        ref_model = items[0][1]
+        for k, m in items[1:]:
+            m.wv = smart_align_gensim(ref_model.wv, m.wv)
+
+        # now go backwards and align everything with the last model
+        ref_model = items[-1][1]
+        for k, m in items[-2::-1]:
+            m.wv = smart_align_gensim(ref_model.wv, m.wv)
+
+    def partisanship(self, word):
+        """
+        Given a word, compute the average distance between its embeddings in any
+        two models with the same bias vs. the average distance between any two
+        models with different bias.
+        """
+        diff = 0
+        for i in range(1, 6):
+            forums = [f for f, b in self.forum_biases.items() if b == i]
+            others = [f for f in self.forum_biases.keys() if f not in forums]
+            count = 0
+            dist = 0
+            for f in forums:
+                for o in others:
+                    dist += cosine(self.models[f].wv[w], self.models[o].wv[w])
+                    count += 1.
+            dist /= count
+            same_dist = 0
+            for i in range(len(forums)):
+                for j in range(i+1, len(forums)):
+                    same_dist += cosine(self.models[forums[i]][w], self.models[forums[j]][w])
+                    count += 1.
+            same_dist /= count
+            diff += dist - same_dist
+        return diff / 5
+
+    def plot_partisanship(self):
+        combinations = []
+        forums = self.forum_biases.keys()
+        for i in range(len(forums)):
+            for j in range(i+1, len(forums)):
+                combinations.append((forums[i], forums[j]))
+
+        vocab = self.models[forums[0]].wv.vocab
+        counts = {w: sum(self.models[f].wv.vocab[w].count for f in forums)
+                  for w in vocab}
+        partisanships = {w: partisanship(w) for w in vocab}
+        vocab = sorted(vocab, key=lambda v: counts[v])
+
+        # x is word counts, y is word "partisanship"
+        x, y = np.array(zip(*[(counts[w], partisanship[w]) for w in vocab]))
+
+        layout = go.Layout(
+            tile='Vector variation vs. word frequency',
+            hovermode='closest',
+            xaxis=dict(title='frequency', ticklen=5, gridwidth=2),
+            yaxis=dict(title='cosine distance', ticklen=5, gridwidth=2),
+            showlegend=False)
+        # graph x on a log-log scale (this is most aesthetically pleasing)
+        trace = go.Scatter(x=np.log(np.log(x)), y=y, mode='markers',
+                            name='words', text=vocab)
+        py.plot(go.Figure(data=[trace], layout=layout),
+                filename='average-model-distances')
+
+    def find_partisan_correlations(self, word):
+        for i in range(1, 6):
+
+
+
+    def remap_embeddings(self, num_words=1000, vector_size=1000):
+        """
+        Map word embeddings to a space defined by the distance between each word
+        and a set of reference words inside its original embedding.
+        """
         # what words are shared across all vocabs?
         models = self.models.values()
         overlap = set(models[0].wv.vocab.keys())
@@ -365,12 +537,6 @@ class VectorClassifier(object):
         relevant = [p for p in posts if self.relevant(p)]
         for forum, m in self.models:
             score[forum] = m.score(relevant)
-
-    def align_embeddings(self):
-        """
-        After all models have been trained, map them all to the same vector
-        space so that we can compare embeddings across models.
-        """
 
 
 # TODO: find word pairs whose similarity correlates with partisanship
