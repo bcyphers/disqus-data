@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
 from gensim.models import Word2Vec
+from gensim.models.phrases import Phraser, Phrases
 #from langdetect import detect, detect_langs
 #from langdetect.lang_detect_exception import LangDetectException
 from nltk.stem.snowball import SnowballStemmer
@@ -31,6 +32,9 @@ from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
 from sqlalchemy import select, MetaData
 from sqlalchemy.sql import and_, or_, not_
+from scipy.spatial.distance import cosine
+from scipy.stats.stats import pearsonr
+from scipy.optimize import curve_fit
 
 import plotly
 import plotly.plotly as py
@@ -89,13 +93,11 @@ class StemTokenizer(object):
 
         for s in sentences:
             for t in self.tokenizer.tokenize(s):
-                # exclude single-letter tokens
-                if len(t) >= 2: # and t not in stop:
-                    # optional: do stemming
-                    if self.stem:
-                        t = self.stemmer.stem(t)
-                    t = t.lower()
-                    out.append(t)
+                # optional: do stemming
+                if self.stem:
+                    t = self.stemmer.stem(t)
+                t = t.lower()
+                out.append(t)
         return out
 
 
@@ -216,15 +218,16 @@ class VectorClassifier(object):
         self.limit = limit
         self.tokenize = StemTokenizer(False)
         self.stopwords = stopwords.words('english')
+        self.partisanships = None
 
-    def load_data(self, forum):
+    def load_data(self, forum, cache='./post_cache_3gram'):
         """
         Load all posts for forum between start_time and end_time.
         If present on the local file system, load and return that; otherwise
         pull data from the database.
         """
         posts = []
-        fname = './post_cache/%s.txt' % forum
+        fname = cache + '/%s.txt' % forum
 
         if os.path.isfile(fname):
             # load stuff if we can
@@ -256,80 +259,49 @@ class VectorClassifier(object):
         print 'saving cleaned posts...'
         with open(fname, 'w') as f:
             for p in posts:
-                if p is not None:
-                    tstr = t + '\n'
-                    f.write(tstr.encode('utf8'))
+                tstr = p + '\n'
+                f.write(tstr.encode('utf8'))
 
         return posts
 
-    def sub_relevant_ngrams(self, forum, min_frac=.2):
+    def train_phraser(self, threshold=10.):
         """
         For the given forum, find a set of phrases (n-grams of words) that
-        appear often enough together to be considered their own tokens. This is
-        somewhat similar to the method used by gensim
+        appear often enough together to be considered their own tokens.
         (https://radimrehurek.com/gensim/models/phrases.html#module-gensim.models.phrases)
-        but we ignore stopwords and have a stricter threshold for phrases.
         """
-        fname = './post_cache_tuples/%s.txt' % forum
-        if os.path.isfile(fname):
-            return None
+        bigrams = Phrases(threshold=threshold)
+        trigrams = Phrases(threshold=threshold)
+        for forum in self.forums:
+            fname = './post_cache_3gram/%s.txt' % forum
 
-        docs = self.load_data(forum)
+            print 'loading data...'
+            docs = self.load_data(forum)
+            if len(docs) > 1e5:
+                docs = [docs[i] for i in np.random.choice(len(docs),
+                                                          size=int(1e5))]
 
-        print 'training count vectorizer...'
-        cv = CountVectorizer(ngram_range=(1,3), min_df=1e-5,
-                             tokenizer=lambda l: l.split())
-        if len(docs) > 1e6:
-            doc_sample = [docs[i] for i in
-                          np.random.choice(len(docs), size=int(1e6))]
-        else:
-            doc_sample = docs
-        cv.fit(doc_sample)
+            posts = [d.split() for d in docs]
 
-        print 'transforming text sample...'
-        countvec = np.zeros((1, len(cv.vocabulary_)))
-        for i in range(0, len(doc_sample)/1000 + 1):
-            combined = u' '.join(doc_sample[i*1000:(i+1)*1000])
-            countvec += cv.transform([combined]).todense()
+            print 'updating bigrams...'
+            bigrams.add_vocab(posts)
 
-        print 'summing up counts...'
-        counts = {w: countvec[0, i] for w, i in cv.vocabulary_.iteritems()}
-        word_counts = defaultdict(int)
-        for t, c in counts.iteritems():
-            for w in t.split():
-                word_counts[w] += c
+            print 'converting to bigrams...'
+            posts = bigrams[posts]
 
-        tuples = [w for w in counts if len(w.split()) > 1]
-        filtered = []
+            print 'updating trigrams...'
+            trigrams.add_vocab(posts)
 
-        print 'filtering %d tuples...' % len(tuples)
-        for t in tuples:
-            words = t.split()
-            if len([w for w in words if w not in self.stopwords]) <= 1:
-                continue
-            for w in t.split():
-                if w not in self.stopwords and \
-                        counts[t] < word_counts[w] * min_frac:
-                    break
-            else:
-                filtered.append(t)
+        return bigrams, trigrams
 
-        print filtered
-
-        print 'writing new tuples to file...'
-        replacements = {t: t.replace(' ', '_') for t in filtered}
-        rep = dict((re.escape(k), v) for k, v in
-                   replacements.iteritems())
-        pattern = re.compile("|".join(rep.keys()))
-        text = pattern.sub(lambda m:
-                           rep[re.escape(m.group(0))], text)
-
-        with open(fname, 'w') as f:
-            for d in docs:
-                d = pattern.sub(lambda m: rep[re.escape(m.group(0))], d)
-                f.write((d + '\n').encode('utf8'))
-
-        return filtered
+    def do_phrasing(self, forum, p2, p3):
+        inf = './post_cache_1gram/%s.txt' % forum
+        outf = './post_cache_3gram/%s.txt' % forum
+        with open(inf) as infile:
+            with open(outf, 'w') as outfile:
+                for i, l in enumerate(infile):
+                    p = p3[p2[l.decode('utf8').strip().split()]]
+                    outfile.write((' '.join(p) + '\n').encode('utf8'))
 
     def train_models(self, max_posts=int(5e6)):
         """
@@ -341,7 +313,7 @@ class VectorClassifier(object):
         """
         self.models = {}
         for forum in self.forums:
-            fname = './model_cache_ngram/%s.bin' % forum
+            fname = './model_cache_3gram/%s.bin' % forum
             if os.path.isfile(fname):
                 print 'loading model for forum %s...' % forum
                 self.models[forum] = Word2Vec.load(fname)
@@ -427,15 +399,19 @@ class VectorClassifier(object):
             dist = 0
             for f in forums:
                 for o in others:
-                    dist += cosine(self.models[f].wv[w], self.models[o].wv[w])
+                    dist += cosine(self.models[f].wv[word],
+                                   self.models[o].wv[word])
                     count += 1.
             dist /= count
+
             same_dist = 0
+            same_count = 0
             for i in range(len(forums)):
                 for j in range(i+1, len(forums)):
-                    same_dist += cosine(self.models[forums[i]][w], self.models[forums[j]][w])
-                    count += 1.
-            same_dist /= count
+                    same_dist += cosine(self.models[forums[i]][word],
+                                        self.models[forums[j]][word])
+                    same_count += 1.
+            same_dist /= same_count
             diff += dist - same_dist
         return diff / 5
 
@@ -447,30 +423,64 @@ class VectorClassifier(object):
                 combinations.append((forums[i], forums[j]))
 
         vocab = self.models[forums[0]].wv.vocab
+        words = vocab.keys()
         counts = {w: sum(self.models[f].wv.vocab[w].count for f in forums)
-                  for w in vocab}
-        partisanships = {w: partisanship(w) for w in vocab}
+                  for w in words}
+
+        forum_tfs = {}
+        for f in self.forum_biases:
+            vocab = self.models[f].wv.vocab
+            forum_tfs[f] = np.zeros(len(words))
+            total_count = sum(v.count for v in vocab.values())
+            for i, w in enumerate(words):
+                forum_tfs[f][i] = vocab[w].count / float(total_count)
+
         vocab = sorted(vocab, key=lambda v: counts[v])
+        if not self.partisanships:
+            self.partisanships = {w: self.partisanship(w) for w in vocab}
 
-        # x is word counts, y is word "partisanship"
-        x, y = np.array(zip(*[(counts[w], partisanship[w]) for w in vocab]))
-
+        # x is log(log(word counts)), y is word "partisanship"
+        x, y = np.array(zip(*[(np.log(np.log(counts[w])),
+                               self.partisanships[w]) for w in vocab]))
         layout = go.Layout(
-            tile='Vector variation vs. word frequency',
+            title='Vector variation vs. word frequency',
             hovermode='closest',
             xaxis=dict(title='frequency', ticklen=5, gridwidth=2),
-            yaxis=dict(title='cosine distance', ticklen=5, gridwidth=2),
+            yaxis=dict(title='partisanship', ticklen=5, gridwidth=2),
             showlegend=False)
+
         # graph x on a log-log scale (this is most aesthetically pleasing)
-        trace = go.Scatter(x=np.log(np.log(x)), y=y, mode='markers',
-                            name='words', text=vocab)
-        py.plot(go.Figure(data=[trace], layout=layout),
+        trace = go.Scatter(x=x, y=y, mode='markers', name='words',
+                           text=vocab)
+
+        #def func(x, a, b, c):
+            #return a * np.log(b * x) + c
+
+        def func(x, a, b):
+            return a * x + b
+
+        popt, pcov = curve_fit(func, x, y)
+        domain = np.linspace(min(x), max(x), 1000)
+        fit_trace = go.Scatter(x=domain, y=func(domain, *popt), mode='lines')
+
+        py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
                 filename='average-model-distances')
 
-    def find_partisan_correlations(self, word):
-        for i in range(1, 6):
+    def find_partisan_correlations(self, word, num_dists=1000):
+        words = self.models[self.forum_biases.keys()[0]].wv.vocab.keys()
+        dists = np.zeros((len(self.forum_biases), len(words)))
+        biases = []
+        forums = sorted(self.forum_biases.keys(), key=self.forum_biases.get)
+        for i, (forum, bias) in enumerate(self.forum_biases.items()):
+            biases.append(bias)
+            model = self.models[forum]
+            for j, w in enumerate(words):
+                dists[i, j] = model.wv.similarity(word, w)**2
 
+        corrs = [pearsonr(dists[:, i], biases) for i in range(dists.shape[1])]
+        word_corrs = [(corrs[i], words[i]) for i in range(len(corrs))]
 
+        return words, dists, sorted(word_corrs)
 
     def remap_embeddings(self, num_words=1000, vector_size=1000):
         """
