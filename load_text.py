@@ -30,9 +30,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, \
                                             HashingVectorizer, TfidfTransformer
 from sklearn.manifold import TSNE
 from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import normalize
+from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy import select, MetaData
 from sqlalchemy.sql import and_, or_, not_
 from scipy.spatial.distance import cosine
+from scipy.spatial import procrustes
 from scipy.stats.stats import pearsonr
 from scipy.optimize import curve_fit
 
@@ -41,7 +44,7 @@ import plotly.plotly as py
 import plotly.graph_objs as go
 
 from orm import *
-from word2vec_align import smart_align_gensim
+from word2vec_align import smart_align_gensim, procrustes_align, align_vocab
 
 
 TRUMP_START = datetime(2017, 1, 20, 17, 0, 0)
@@ -205,11 +208,15 @@ class VectorClassifier(object):
     words that differentiate it most from the other models.
     """
     def __init__(self, forums=None, start_time=None, end_time=None, limit=None):
+        self.forum_biases = {}
         if forums is None:
             self.forums = []
             with open('./all_forums.txt') as f:
                 for line in f:
-                    self.forums.append(line.strip())
+                    elts = line.strip().split()
+                    self.forums.append(elts[0])
+                    if len(elts) > 1:
+                        self.forum_biases[elts[0]] = int(elts[1])
         else:
             self.forums = forums
 
@@ -219,8 +226,14 @@ class VectorClassifier(object):
         self.tokenize = StemTokenizer(False)
         self.stopwords = stopwords.words('english')
         self.partisanships = None
+        self.similarities = None
 
-    def load_data(self, forum, cache='./post_cache_3gram'):
+    @property
+    def words(self):
+        self._words = self.models.values()[0].wv.index2word
+        return self._words
+
+    def load_data(self, forum, cache='./post_cache/3gram'):
         """
         Load all posts for forum between start_time and end_time.
         If present on the local file system, load and return that; otherwise
@@ -273,7 +286,7 @@ class VectorClassifier(object):
         bigrams = Phrases(threshold=threshold)
         trigrams = Phrases(threshold=threshold)
         for forum in self.forums:
-            fname = './post_cache_3gram/%s.txt' % forum
+            fname = './post_cache_1gram/%s.txt' % forum
 
             print 'loading data...'
             docs = self.load_data(forum)
@@ -295,8 +308,8 @@ class VectorClassifier(object):
         return bigrams, trigrams
 
     def do_phrasing(self, forum, p2, p3):
-        inf = './post_cache_1gram/%s.txt' % forum
-        outf = './post_cache_3gram/%s.txt' % forum
+        inf = './post_cache/1gram/%s.txt' % forum
+        outf = './post_cache/3gram/%s.txt' % forum
         with open(inf) as infile:
             with open(outf, 'w') as outfile:
                 for i, l in enumerate(infile):
@@ -313,7 +326,7 @@ class VectorClassifier(object):
         """
         self.models = {}
         for forum in self.forums:
-            fname = './model_cache_3gram/%s.bin' % forum
+            fname = './model_cache/3gram/%s.bin' % forum
             if os.path.isfile(fname):
                 print 'loading model for forum %s...' % forum
                 self.models[forum] = Word2Vec.load(fname)
@@ -340,39 +353,13 @@ class VectorClassifier(object):
             model.save(fname)
             self.models[forum] = model
 
-    def get_forum_biases(self):
-        """
-        Load allsides bias ratings from the database for each of the forums in
-        self.forums. Store all ratings in self.forum_biases.
-        """
-        self.forum_biases = {}
-        for f in self.models:
-            engine, session = get_mysql_session()
-            meta = MetaData(bind=engine, reflect=True)
-            allsides_forums = meta.tables['allsides_forums']
-            allsides = meta.tables['allsides']
-
-            pk = session.query(Forum.pk).filter(Forum.id == f).first()
-            if not pk:
-                continue
-            pk = pk[0]
-
-            select_ = select([allsides, allsides_forums]).where(
-                                  and_(allsides.c.id == allsides_forums.c.allsides_id,
-                                       allsides_forums.c.forum_pk == pk))
-
-            conn = engine.connect()
-            res = conn.execute(select_).first()
-
-            if res:
-                self.forum_biases[f] = res[2]
-
     def align_embeddings(self):
         """
         After all models have been trained, align their vector spaces with
         Procrustes superimposition (https://en.wikipedia.org/wiki/Procrustes_analysis)
         so that we can compare embeddings across models.
         """
+        print 'filtering vocabularies...'
         # use the model with the biggest vocab size as the first reference
         items = sorted(self.models.items(),
                        key=lambda i: -len(i[1].wv.vocab.keys()))
@@ -385,63 +372,192 @@ class VectorClassifier(object):
         for k, m in items[-2::-1]:
             m.wv = smart_align_gensim(ref_model.wv, m.wv)
 
-    def partisanship(self, word):
+        # make sure vocabs are lined up
+        for k, m in items[-2::-1]:
+            align_vocab(ref_model.wv.index2word, m.wv)
+        return
+
+        print 'finding average alignment...'
+
+        for i in range(20):
+            print i
+            # find the "mean" shape of all the embeddings
+            sums = np.zeros(ref_model.wv.syn0norm.shape)
+            for m in self.models.values():
+                sums += m.wv.syn0norm
+            mean_shape = normalize(sums)
+
+            for k, m in self.models.items():
+                # align each model with the mean vector space
+                m1, m2, score = procrustes(mean_shape, m.wv.syn0norm)
+                m.wv.syn0norm = m.wv.syn0 = m2
+                print k, score
+
+    def score_partisanship_corr(self, word):
+        forums, biases = zip(*self.forum_biases.items())
+        series = []
+        for f in forums:
+            ix = self.models[f].wv.index2word.index(word)
+            series.append(self.similarities[f][ix, :])
+        series = np.array(series)
+        err = sum(-np.log(pearsonr(series[:, i], biases)[1]) for i in
+                  range(series.shape[1]))
+        return err / series.shape[1]
+
+    def compute_partisanship_corr(self):
+        if self.partisanships is not None:
+            return
+
+        words = [w for w in self.words if w not in self.stopwords]
+        self.partisanships = {}
+
+        for i, w in enumerate(words):
+            self.partisanships[w] = self.score_partisanship_corr(w)
+            if (i+1) % 100 == 0:
+                print "finished with %d words" % (i+1)
+
+    def compute_partisanship_counts(self):
+        if self.partisanships is not None:
+            return
+
+        forums, biases = zip(*self.forum_biases.items())
+        counts = np.zeros((len(self.words), len(forums)))
+
+        for i, f in enumerate(forums):
+            vocab = self.models[f].wv.vocab
+            total_count = sum(vocab[w].count for w in vocab)
+            counts[:, i] = np.array([np.log(vocab[w].count / float(total_count))
+                                     for w in self.words])
+
+        self.partisanships = {w: pearsonr(counts[i, :], biases)[0] for i, w
+                              in enumerate(self.words)}
+
+
+    def compute_partisanship_cosine(self):
         """
-        Given a word, compute the average distance between its embeddings in any
+        For each word, compute the average distance between its embeddings in any
         two models with the same bias vs. the average distance between any two
         models with different bias.
         """
-        diff = 0
-        for i in range(1, 6):
-            forums = [f for f, b in self.forum_biases.items() if b == i]
-            others = [f for f in self.forum_biases.keys() if f not in forums]
-            count = 0
-            dist = 0
-            for f in forums:
-                for o in others:
-                    dist += cosine(self.models[f].wv[word],
-                                   self.models[o].wv[word])
-                    count += 1.
-            dist /= count
+        if self.partisanships is not None:
+            return
 
-            same_dist = 0
-            same_count = 0
+        left = [f for f, b in self.forum_biases.items() if b <= 2]
+        right = [f for f, b in self.forum_biases.items() if b >= 4]
+
+        #models = {f: self.models[f].wv for f in left + right}
+        models = self.map_to_same_space(left + right)
+
+        print 'computing cross-class distances...'
+        dist = np.zeros(len(self.words))
+        count = 0
+        for f1 in left:
+            #m1 = self.models[f1].wv
+            m1 = models[f1]
+            for f2 in right:
+                #m2 = self.models[f2].wv
+                m2 = models[f2]
+                for i, w in enumerate(self.words):
+                    dist[i] += cosine(m1[w], m2[w])
+                count += 1.
+        dist /= count
+
+        print 'computing intra-class distances...'
+        same_dist = np.zeros(len(self.words))
+        count = 0
+        for forums in [right, left]:
             for i in range(len(forums)):
+                #m1 = self.models[forums[i]].wv
+                m1 = models[forums[i]]
                 for j in range(i+1, len(forums)):
-                    same_dist += cosine(self.models[forums[i]][word],
-                                        self.models[forums[j]][word])
-                    same_count += 1.
-            same_dist /= same_count
-            diff += dist - same_dist
-        return diff / 5
+                    #m2 = self.models[forums[j]].wv
+                    m2 = models[forums[j]]
+                    for k, w in enumerate(self.words):
+                        same_dist[k] += cosine(m1[w], m2[w])
+                    count += 1.
+        same_dist /= count
+        diff = dist - same_dist
+
+        self.partisanships = {w: diff[i] for i, w in enumerate(self.words)
+                              if w not in self.stopwords}
+
+    def get_similarities(self):
+        print 'computing similarity matrices...'
+        if self.similarities:
+            print 'already done.'
+        else:
+            self.similarities = {}
+            for f in self.forums:
+                print f
+                self.similarities[f] = cosine_similarity(self.models[f].wv.syn0)
+
+        self.sim_index = {w: i for i, w in enumerate(self.models.values()[0].wv.index2word)}
+
+    def get_word_proportions(self, words):
+        fractions = defaultdict(float)
+        print 'getting word weights...'
+        for f in self.forum_biases:
+            vocab = self.models[f].wv.vocab
+            total_count = sum(vocab[w].count for w in words)
+            for w in words:
+                fractions[w] += vocab[w].count / float(total_count)
+
+        for w in fractions:
+            fractions[w] /= len(self.forum_biases)
+
+        print 'done.'
+        return fractions
+
+    def get_word_counts(self, words):
+        return {w: sum(self.models[f].wv.vocab[w].count for f in
+                       self.forum_biases)
+                for w in words}
+
+    def map_to_same_space(self, forums, do_pca=True):
+        models = {}
+        self.get_similarities()
+
+        mean_sims = np.zeros(self.similarities.values()[0].shape)
+        for f in forums:
+            s = self.similarities[f]
+            mean_sims += s
+        mean_sims /= len(forums)
+
+        if not do_pca:
+            for f in forums:
+                models[f] = {w: self.similarities[f][i, :] for w, i in
+                             self.sim_index.items()}
+        else:
+            print 'fitting PCA...'
+            pca = PCA(n_components=100)
+            pca.fit(mean_sims)
+
+            print 'PCA transforming...'
+            for f in forums:
+                print f
+                vectors = pca.transform(self.similarities[f])
+                models[f] = {w: vectors[i, :] for w, i in self.sim_index.items()}
+
+        return models
 
     def plot_partisanship(self):
+        """
+        Compute (if necessary) and plot the partisanship of each word in the
+        combined models against its representation in the dataset.
+        """
         combinations = []
         forums = self.forum_biases.keys()
         for i in range(len(forums)):
             for j in range(i+1, len(forums)):
                 combinations.append((forums[i], forums[j]))
 
-        vocab = self.models[forums[0]].wv.vocab
-        words = vocab.keys()
-        counts = {w: sum(self.models[f].wv.vocab[w].count for f in forums)
-                  for w in words}
+        self.compute_partisanship_counts()
+        weights = self.get_word_proportions(self.words)
+        words = sorted(self.words, key=lambda w: weights[w])
 
-        forum_tfs = {}
-        for f in self.forum_biases:
-            vocab = self.models[f].wv.vocab
-            forum_tfs[f] = np.zeros(len(words))
-            total_count = sum(v.count for v in vocab.values())
-            for i, w in enumerate(words):
-                forum_tfs[f][i] = vocab[w].count / float(total_count)
-
-        vocab = sorted(vocab, key=lambda v: counts[v])
-        if not self.partisanships:
-            self.partisanships = {w: self.partisanship(w) for w in vocab}
-
-        # x is log(log(word counts)), y is word "partisanship"
-        x, y = np.array(zip(*[(np.log(np.log(counts[w])),
-                               self.partisanships[w]) for w in vocab]))
+        # x is log(word counts), y is word "partisanship"
+        x, y = np.array(zip(*[(np.log(weights[w]),
+                               self.partisanships[w]) for w in words]))
         layout = go.Layout(
             title='Vector variation vs. word frequency',
             hovermode='closest',
@@ -451,92 +567,135 @@ class VectorClassifier(object):
 
         # graph x on a log-log scale (this is most aesthetically pleasing)
         trace = go.Scatter(x=x, y=y, mode='markers', name='words',
-                           text=vocab)
+                           text=words)
 
         #def func(x, a, b, c):
             #return a * np.log(b * x) + c
 
-        def func(x, a, b):
+        def lin_func(x, a, b):
             return a * x + b
 
-        popt, pcov = curve_fit(func, x, y)
+        popt, pcov = curve_fit(lin_func, x, y)
         domain = np.linspace(min(x), max(x), 1000)
-        fit_trace = go.Scatter(x=domain, y=func(domain, *popt), mode='lines')
+        fit_trace = go.Scatter(x=domain, y=lin_func(domain, *popt), mode='lines')
 
         py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
                 filename='average-model-distances')
 
-    def find_partisan_correlations(self, word, num_dists=1000):
-        words = self.models[self.forum_biases.keys()[0]].wv.vocab.keys()
-        dists = np.zeros((len(self.forum_biases), len(words)))
+    def find_partisan_correlations(self, word, do_shuf=False):
+        dists = np.zeros((len(self.forum_biases), len(self.words)))
         biases = []
         forums = sorted(self.forum_biases.keys(), key=self.forum_biases.get)
+        self.get_similarities()
         for i, (forum, bias) in enumerate(self.forum_biases.items()):
             biases.append(bias)
             model = self.models[forum]
-            for j, w in enumerate(words):
-                dists[i, j] = model.wv.similarity(word, w)**2
+            dists[i, :] = self.similarities[forum][self.words.index(word)]
 
-        corrs = [pearsonr(dists[:, i], biases) for i in range(dists.shape[1])]
-        word_corrs = [(corrs[i], words[i]) for i in range(len(corrs))]
+        if do_shuf:
+            np.random.shuffle(biases)
 
-        return words, dists, sorted(word_corrs)
+        print 'running regressions...'
+        slopes = [tuple(np.polyfit(biases, dists[:, i], 1)) for i in range(dists.shape[1])]
+        print 'computing correlations...'
+        corrs = [tuple(pearsonr(dists[:, i], biases)) for i in range(dists.shape[1])]
+        res = [(slopes[i], corrs[i], self.words[i]) for i in range(len(corrs))]
+        print 'done.'
 
-    def remap_embeddings(self, num_words=1000, vector_size=1000):
-        """
-        Map word embeddings to a space defined by the distance between each word
-        and a set of reference words inside its original embedding.
-        """
-        # what words are shared across all vocabs?
-        models = self.models.values()
-        overlap = set(models[0].wv.vocab.keys())
-        for m in models:
-            overlap &= set(m.wv.vocab.keys())
+        return dists, res
 
-        # remove stopwords
-        overlap = [w for w in overlap if w not in self.tokenize.stopwords]
+    def plot_partisan_correlations(self, word, random=False):
+        dists, res = self.find_partisan_correlations(word, do_shuf=random)
+        fits, corrs, text = zip(*res)
+        m = np.array(zip(*fits)[0])
+        p = np.array(zip(*corrs)[0])
+        text = np.array(text)
+        weights = self.get_word_proportions(text)
+        x = np.array([np.log(weights[w]) for w in text])
 
-        print 'overlap size: %d words' % len(overlap)
+        left = np.array([i for i, v in enumerate(p) if v < 0])
+        right = np.array([i for i, v in enumerate(p) if v > 0])
+        left_p, right_p = p[left] ** 2, p[right] ** 2
+        left_m, right_m = np.abs(m[left]), np.abs(m[right])
+        left_t, right_t = text[left], text[right]
 
-        # count the total number of words in each corpus
-        model_counts = {f: sum([m.wv.vocab[w].count for w in m.wv.vocab])
-                        for f, m in self.models.iteritems()}
-        word_scores = {}
-        for w in overlap:
-            # average portion of each corpus that the word represents
-            word_scores[w] = sum([float(m.wv.vocab[w].count) / model_counts[f]
-                                  for f, m in self.models.iteritems()])
+        print 'generating plot...'
+        layout = go.Layout(
+            title=word,
+            hovermode='closest',
+            xaxis=dict(title='correlation', ticklen=5, gridwidth=2),
+            yaxis=dict(title='slope', ticklen=5, gridwidth=2),
+            showlegend=False)
 
-        if num_words is not None:
-            top_words = sorted(overlap, key=lambda w: -word_scores[w])[:num_words]
-        else:
-            top_words = overlap[:]
+        left_trace = go.Scatter(x=left_p, y=left_m, mode='markers', text=left_t,
+                                marker=dict(color='rgb(0,0,255)'))
+        right_trace = go.Scatter(x=right_p, y=right_m, mode='markers', text=right_t,
+                                 marker=dict(color='rgb(255,0,0)'))
+        #trace = go.Scatter(x=x, y=np.array(p) ** 2, mode='markers', text=text)
+        py.plot(go.Figure(data=[left_trace, right_trace], layout=layout), filename='m-v-corr')
+        print 'done.'
 
-        probs = np.array([word_scores[w] for w in overlap])
-        probs /= sum(probs)
-        sample_vec = np.random.choice(overlap, vector_size, replace=False, p=probs)
+    def plot_partisan_similarity(self, w1, w2):
+        """ Plot the similarity score of two words against partisan bias """
+        biases = []
+        similarities = []
+        forums = []
+        for f, bias in self.forum_biases.items():
+            forums.append(f)
+            biases.append(bias)
+            similarities.append(self.models[f].similarity(w1, w2))
 
-        # dataframe for each model
-        dfs = {}
-        for f, m in self.models.iteritems():
-            dfs[f] = pd.DataFrame(index=top_words, columns=sample_vec)
-            for w in top_words:
-                dfs[f].loc[w] = np.array([m.wv.similarity(w, w2) for w2 in
-                                          sample_vec])
+        p, std = pearsonr(biases, similarities)
+        title = '(%s, %s): p = %.3f' % (w1, w2, p)
 
-        print 'finished computing vectors for top %d words' % len(top_words)
-        self.word_diffs = pd.Series(data=np.zeros(len(top_words)),
-                                    index=top_words)
+        m, b = np.polyfit(biases, similarities, 1)
+        fit = [m * x + b for x in range(1, 6)]
 
-        for i in range(len(self.forums)):
-            for j in range(i+1, len(self.forums)):
-                f1 = self.forums[i]
-                f2 = self.forums[j]
-                for w in top_words:
-                    self.word_diffs[w] += np.linalg.norm(dfs[f1].ix[w] -
-                                                         dfs[f2].ix[w])
-        self.dfs = dfs
-        self.word_diffs = self.word_diffs.sort_values()
+        print 'generating plot...'
+        layout = go.Layout(
+            title=title,
+            hovermode='closest',
+            xaxis=dict(title='partisan bias', ticklen=5, gridwidth=2),
+            yaxis=dict(title='similarity', range=[-1, 1], ticklen=5, gridwidth=2),
+            showlegend=False)
+
+        trace = go.Scatter(x=biases, y=similarities, mode='markers', text=forums)
+        fit_trace = go.Scatter(x=range(1, 6), y=fit, mode='lines')
+        py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
+                filename='word-similarity')
+        print 'done.'
+
+    def plot_partisan_count(self, word):
+        """ Plot the log probability of one word against partisan bias """
+        forums = []
+        biases = []
+        counts = []
+        for f, bias in self.forum_biases.items():
+            forums.append(f)
+            biases.append(bias)
+            vocab = self.models[f].wv.vocab
+            total_count = sum(vocab[w].count for w in self.words)
+            counts.append(np.log(vocab[word].count / float(total_count)))
+
+        p, std = pearsonr(biases, counts)
+        title = '%s: p = %.3f' % (word, p)
+
+        m, b = np.polyfit(biases, counts, 1)
+        fit = [m * x + b for x in range(1, 6)]
+
+        print 'generating plot...'
+        layout = go.Layout(
+            title=title,
+            hovermode='closest',
+            xaxis=dict(title='partisan bias', ticklen=5, gridwidth=2),
+            yaxis=dict(title='proportion', ticklen=5, gridwidth=2),
+            showlegend=False)
+
+        trace = go.Scatter(x=biases, y=counts, mode='markers', text=forums)
+        fit_trace = go.Scatter(x=range(1, 6), y=fit, mode='lines')
+        py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
+                filename='word-proportion')
+        print 'done.'
 
     def relevant(self, post):
         # is there at least one "indicator" word in the post?

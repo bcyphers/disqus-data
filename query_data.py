@@ -12,6 +12,25 @@ from orm import get_post_db, get_mysql_session
 from load_text import StemTokenizer
 from constants import TRUMP_START, DATE_FMT
 
+def get_forum_bias(forum):
+    engine, session = get_mysql_session()
+    meta = MetaData(bind=engine, reflect=True)
+    allsides_forums = meta.tables['allsides_forums']
+    allsides = meta.tables['allsides']
+
+    pk = session.query(Forum.pk).filter(Forum.id == f).first()
+    if not pk:
+        continue
+    pk = pk[0]
+
+    select_ = select([allsides, allsides_forums]).where(
+                          and_(allsides.c.id == allsides_forums.c.allsides_id,
+                               allsides_forums.c.forum_pk == pk))
+
+    conn = engine.connect()
+    res = conn.execute(select_).first()
+    return res[2]
+
 
 def get_forum_posts_count(year=2017, session=None):
     """ get a mapping of forum ids to number of posts in the database """

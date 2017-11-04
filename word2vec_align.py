@@ -27,10 +27,16 @@ def smart_align_gensim(base_embed, other_embed, words=None):
                                                               other_embed,
                                                               words=words)
 
-    # get the embedding matrices
-    base_vecs = in_base_embed.syn0norm
-    other_vecs = in_other_embed.syn0norm
+    ortho = procrustes_align(in_base_embed.syn0norm, in_other_embed.syn0norm)
 
+    # multiply the embedding matrix (syn0norm) by "ortho"
+    # Replace original array with modified one
+    other_embed.syn0norm = other_embed.syn0 = (other_embed.syn0norm).dot(ortho)
+
+    return other_embed
+
+
+def procrustes_align(base_vecs, other_vecs):
     # just a matrix dot product with numpy
     m = other_vecs.T.dot(base_vecs)
 
@@ -38,13 +44,7 @@ def smart_align_gensim(base_embed, other_embed, words=None):
     u, _, v = np.linalg.svd(m)
 
     # another matrix operation
-    ortho = u.dot(v)
-
-    # Replace original array with modified one
-    # i.e. multiplying the embedding matrix (syn0norm)by "ortho"
-    other_embed.syn0norm = other_embed.syn0 = (other_embed.syn0norm).dot(ortho)
-
-    return other_embed
+    return u.dot(v)
 
 
 def intersection_align_gensim(m1, m2, words=None):
@@ -83,21 +83,26 @@ def intersection_align_gensim(m1, m2, words=None):
 
     # Then for each model...
     for m in [m1, m2]:
-        # Replace old syn0norm array with new one (with common vocab)
-        indices = [m.vocab[w].index for w in common_vocab]
-        old_arr = m.syn0norm
-        new_arr = np.array([old_arr[index] for index in indices])
-        m.syn0norm = m.syn0 = new_arr
-
-        # Replace old vocab dictionary with new one (with common vocab)
-        # and old index2word with new one
-        m.index2word = common_vocab
-        old_vocab = m.vocab
-        new_vocab = {}
-        for new_index, word in enumerate(common_vocab):
-            old_vocab_obj = old_vocab[word]
-            new_vocab[word] = gensim.models.word2vec.Vocab(index=new_index,
-                                                           count=old_vocab_obj.count)
-        m.vocab = new_vocab
+        align_vocab(common_vocab, m)
 
     return (m1, m2)
+
+def align_vocab(i2w, m):
+    """ force m's vocab to be the same order as i2w. """
+    # Replace old syn0norm array with new one (with common vocab)
+    indices = [m.vocab[w].index for w in i2w]
+    old_arr = m.syn0norm
+    new_arr = np.array([old_arr[index] for index in indices])
+    m.syn0norm = m.syn0 = new_arr
+
+    # Replace old vocab dictionary with new one (with common vocab)
+    # and old index2word with new one
+    m.index2word = i2w
+    old_vocab = m.vocab
+    new_vocab = {}
+    for new_index, word in enumerate(i2w):
+        old_vocab_obj = old_vocab[word]
+        new_vocab[word] = gensim.models.word2vec.Vocab(index=new_index,
+                                                       count=old_vocab_obj.count)
+    m.vocab = new_vocab
+
