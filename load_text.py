@@ -225,7 +225,7 @@ class VectorClassifier(object):
         self.limit = limit
         self.tokenize = StemTokenizer(False)
         self.stopwords = stopwords.words('english')
-        self.partisanships = None
+        self.partisanships = {'cos': None, 'corr': None, 'counts': None}
         self.similarities = None
 
     @property
@@ -375,6 +375,8 @@ class VectorClassifier(object):
         # make sure vocabs are lined up
         for k, m in items[-2::-1]:
             align_vocab(ref_model.wv.index2word, m.wv)
+
+        self.sim_index = {w: i for i, w in enumerate(self.models.values()[0].wv.index2word)}
         return
 
         print 'finding average alignment...'
@@ -405,19 +407,19 @@ class VectorClassifier(object):
         return err / series.shape[1]
 
     def compute_partisanship_corr(self):
-        if self.partisanships is not None:
+        if self.partisanships['corr'] is not None:
             return
 
         words = [w for w in self.words if w not in self.stopwords]
-        self.partisanships = {}
-
+        parts = {}
         for i, w in enumerate(words):
-            self.partisanships[w] = self.score_partisanship_corr(w)
+            parts[w] = self.score_partisanship_corr(w)
             if (i+1) % 100 == 0:
                 print "finished with %d words" % (i+1)
+        self.partisanships['corr'] = parts
 
     def compute_partisanship_counts(self):
-        if self.partisanships is not None:
+        if self.partisanships['counts'] is not None:
             return
 
         forums, biases = zip(*self.forum_biases.items())
@@ -429,9 +431,8 @@ class VectorClassifier(object):
             counts[:, i] = np.array([np.log(vocab[w].count / float(total_count))
                                      for w in self.words])
 
-        self.partisanships = {w: pearsonr(counts[i, :], biases)[0] for i, w
-                              in enumerate(self.words)}
-
+        self.partisanships['counts'] = {w: pearsonr(counts[i, :], biases)[0]
+                                        for i, w in enumerate(self.words)}
 
     def compute_partisanship_cosine(self):
         """
@@ -439,7 +440,7 @@ class VectorClassifier(object):
         two models with the same bias vs. the average distance between any two
         models with different bias.
         """
-        if self.partisanships is not None:
+        if self.partisanships['cos'] is not None:
             return
 
         left = [f for f, b in self.forum_biases.items() if b <= 2]
@@ -478,20 +479,31 @@ class VectorClassifier(object):
         same_dist /= count
         diff = dist - same_dist
 
-        self.partisanships = {w: diff[i] for i, w in enumerate(self.words)
-                              if w not in self.stopwords}
+        self.partisanships['cos'] = {
+            w: diff[i] for i, w in enumerate(self.words)
+            if w not in self.stopwords
+        }
+
+    def get_similarities_word(self, forum, word):
+        if self.similarities:
+            return self.similarities[forum][self.sim_index[word]]
+
+        vec = self.models[forum].wv.syn0
+        res = np.zeros(vec.shape[0])
+        for i in range(vec.shape[0]):
+            res[i] = cosine(vec[i], vec[self.sim_index[word]])
+
+        return res
 
     def get_similarities(self):
-        print 'computing similarity matrices...'
         if self.similarities:
             print 'already done.'
         else:
+            print 'computing similarity matrices...'
             self.similarities = {}
             for f in self.forums:
                 print f
                 self.similarities[f] = cosine_similarity(self.models[f].wv.syn0)
-
-        self.sim_index = {w: i for i, w in enumerate(self.models.values()[0].wv.index2word)}
 
     def get_word_proportions(self, words):
         fractions = defaultdict(float)
@@ -540,7 +552,7 @@ class VectorClassifier(object):
 
         return models
 
-    def plot_partisanship(self):
+    def plot_partisanship(self, part_alg='cos'):
         """
         Compute (if necessary) and plot the partisanship of each word in the
         combined models against its representation in the dataset.
@@ -551,13 +563,22 @@ class VectorClassifier(object):
             for j in range(i+1, len(forums)):
                 combinations.append((forums[i], forums[j]))
 
-        self.compute_partisanship_counts()
+        if self.partisanships[part_alg] is None:
+            if part_alg == 'cos':
+                self.compute_partisanship_cosine()
+            elif part_alg == 'corr':
+                self.compute_partisanship_corr()
+            elif part_alg == 'counts':
+                self.compute_partisanship_counts()
+
+        parts = self.partisanships[part_alg]
+
         weights = self.get_word_proportions(self.words)
         words = sorted(self.words, key=lambda w: weights[w])
+        words = [w for w in words if w not in self.stopwords]
 
         # x is log(word counts), y is word "partisanship"
-        x, y = np.array(zip(*[(np.log(weights[w]),
-                               self.partisanships[w]) for w in words]))
+        x, y = np.array(zip(*[(np.log(weights[w]), parts[w]) for w in words]))
         layout = go.Layout(
             title='Vector variation vs. word frequency',
             hovermode='closest',
@@ -579,37 +600,76 @@ class VectorClassifier(object):
         domain = np.linspace(min(x), max(x), 1000)
         fit_trace = go.Scatter(x=domain, y=lin_func(domain, *popt), mode='lines')
 
-        py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
+        py.plot(go.Figure(data=[trace], layout=layout),
                 filename='average-model-distances')
 
-    def find_partisan_correlations(self, word, do_shuf=False):
+    def find_partisan_sim_correlations(self, word, do_shuf=False):
+        """
+        Find and plot the correlation between forum partisanship and that word's
+        similarity with each other word in the vocabulary in that forum's
+        embedding
+
+        word: compute the similarity of this word with each other word in the
+        vocabulary
+        """
+        # sort forums by partisanship
+        forums = sorted(self.forum_biases.keys(), key=self.forum_biases.get)
         dists = np.zeros((len(self.forum_biases), len(self.words)))
         biases = []
-        forums = sorted(self.forum_biases.keys(), key=self.forum_biases.get)
-        self.get_similarities()
+
         for i, (forum, bias) in enumerate(self.forum_biases.items()):
             biases.append(bias)
             model = self.models[forum]
-            dists[i, :] = self.similarities[forum][self.words.index(word)]
+            dists[i, :] = self.get_similarities_word(forum, word)
 
         if do_shuf:
             np.random.shuffle(biases)
 
         print 'running regressions...'
-        slopes = [tuple(np.polyfit(biases, dists[:, i], 1)) for i in range(dists.shape[1])]
+        fits = [tuple(np.polyfit(biases, dists[:, i], 1))
+                for i in range(len(self.words))]
         print 'computing correlations...'
-        corrs = [tuple(pearsonr(dists[:, i], biases)) for i in range(dists.shape[1])]
-        res = [(slopes[i], corrs[i], self.words[i]) for i in range(len(corrs))]
+        corrs = [tuple(pearsonr(dists[:, i], biases))
+                 for i in range(len(self.words))]
         print 'done.'
 
-        return dists, res
+        return fits, corrs
 
-    def plot_partisan_correlations(self, word, random=False):
-        dists, res = self.find_partisan_correlations(word, do_shuf=random)
-        fits, corrs, text = zip(*res)
+    def find_partisan_count_correlations(self):
+        """
+        Find and plot the correlation between word frequency and partisanship
+        for each word in the shared vocabulary
+        """
+        forums, biases = zip(*self.forum_biases.items())
+        counts = np.zeros((len(forums), len(self.words)))
+
+        for i, f in enumerate(forums):
+            vocab = self.models[f].wv.vocab
+            total_count = sum(vocab[w].count for w in vocab)
+            counts[i, :] = np.array([np.log(vocab[w].count / float(total_count))
+                                     for w in self.words])
+
+        print 'running regressions...'
+        fits = [tuple(np.polyfit(biases, counts[:, i], 1)) for i in range(counts.shape[1])]
+        print 'computing correlations...'
+        corrs = [tuple(pearsonr(counts[:, i], biases)) for i in range(counts.shape[1])]
+        print 'done.'
+
+        return fits, corrs
+
+    def plot_partisan_correlations(self, word=None, random=False):
+        """
+        Plot correlation with partisanship
+        """
+        if word is not None:
+            fits, corrs = self.find_partisan_sim_correlations(word, do_shuf=random)
+            title = word
+        else:
+            fits, corrs = self.find_partisan_count_correlations()
+            title = 'Word count correlations'
         m = np.array(zip(*fits)[0])
         p = np.array(zip(*corrs)[0])
-        text = np.array(text)
+        text = np.array(self.words)
         weights = self.get_word_proportions(text)
         x = np.array([np.log(weights[w]) for w in text])
 
@@ -621,7 +681,7 @@ class VectorClassifier(object):
 
         print 'generating plot...'
         layout = go.Layout(
-            title=word,
+            title=title,
             hovermode='closest',
             xaxis=dict(title='correlation', ticklen=5, gridwidth=2),
             yaxis=dict(title='slope', ticklen=5, gridwidth=2),
