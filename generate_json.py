@@ -24,16 +24,16 @@ def generate_details(data, df=None, path='www/data/details.json', e=2, r=3, **kw
     activity = data.get_forum_activity()
     forum_to_users = data.get_deduped_ftu()
 
-    print 'assembling edges...'
+    print('assembling edges...')
     edges = data.get_forum_edges(dedup=True)
-    print 'done'
+    print('done')
 
-    print 'building link matrix...'
+    print('building link matrix...')
     if df is None:
         df = build_link_matrix(data, **kwargs)
-    print 'done'
+    print('done')
 
-    print 'doing MCL...'
+    print('doing MCL...')
     cor = get_correlations(df)
 
     # generate MCL groups
@@ -42,12 +42,12 @@ def generate_details(data, df=None, path='www/data/details.json', e=2, r=3, **kw
     for i, (k, group) in enumerate(groups.items()):
         for forum in group:
             rev_groups[forum] = k
-    print 'done'
+    print('done')
 
     out = {}
 
-    print 'dumping json...'
-    forums = [i for i in data.forum_details.iteritems() if i[0] in df.index]
+    print('dumping json...')
+    forums = [i for i in data.forum_details.items() if i[0] in df.index]
     for f, details in forums:
         act = activity.get(f)
         if f in edges:
@@ -71,7 +71,7 @@ def generate_details(data, df=None, path='www/data/details.json', e=2, r=3, **kw
     with open(path, 'w') as f:
         json.dump(out, f)
 
-    print 'done'
+    print('done')
 
     return df
 
@@ -82,8 +82,8 @@ def generate_topics(data, model=None, path='www/data/topics.json', min_docs=5):
         model.train(sample_size=2500)
 
     # only send data on forums with enough documents
-    doc_counts = {f: len(docs) for f, docs in model.docs.items() if len(docs) >= min_docs}
-    topics = model.predict_topics_forums(doc_counts.keys())
+    doc_counts = {f: len(docs) for f, docs in list(model.docs.items()) if len(docs) >= min_docs}
+    topics = model.predict_topics_forums(list(doc_counts.keys()))
     topics.ix['_baseline'] = model.baseline_topics
 
     # send the relative incidence of each topic
@@ -93,11 +93,11 @@ def generate_topics(data, model=None, path='www/data/topics.json', min_docs=5):
 
 
 def generate_correlations(data, df=None, path='www/data/correlations.json', **kwargs):
-    print 'building dataframe...'
+    print('building dataframe...')
     if df is None:
         df = build_link_matrix(data, **kwargs)
 
-    print 'building correlation matrix...'
+    print('building correlation matrix...')
 
     cor_df = get_correlations(df)
     cor_df.to_json(path, orient='split')
@@ -107,11 +107,11 @@ def generate_correlations(data, df=None, path='www/data/correlations.json', **kw
 
 def generate_corr_scatter(data, df=None, sortby=None,
                           path='www/data/corr-scatter.json', **kwargs):
-    print 'building dataframe...'
+    print('building dataframe...')
     if df is None:
         df = build_link_matrix(data, **kwargs)
 
-    print 'building correlation matrix...'
+    print('building correlation matrix...')
 
     # sort the forums in the matrix by some value from data.forum_details
     if sortby is not None:
@@ -156,9 +156,9 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
     **kwargs: passed on to build_link_matrix
     """
     if df is None:
-        print "building link matrix..."
+        print("building link matrix...")
         df = build_link_matrix(data, **kwargs)
-        print "done"
+        print("done")
 
     cor = get_correlations(df)
     all_cor = []
@@ -170,7 +170,7 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
     nodes = []
     links = []
 
-    print "building nodes..."
+    print("building nodes...")
     # create node json for each forum
     for f in cor.index:
         weights = data.get_forum_activity()
@@ -180,9 +180,9 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
         nodes.append({'id': f,
                       'name': data.forum_details[f]['name'],
                       'radius': weights[f]})
-    print "done"
+    print("done")
 
-    print "building links..."
+    print("building links...")
     # now, the tricky part: create the links
     # start by iterating over all forums
     for i, f1 in enumerate(cor.index):
@@ -199,9 +199,9 @@ def generate_cluster_graph(data, df=None, cor_cutoff=0.5,
                                              cor[f2][f1] >= f2_top_5):
                 # ordering doesn't really matter here, the matrix is symmetrical
                 links.append({'source': f1, 'target': f2, 'value': cor[f2][f1]})
-    print "done"
+    print("done")
 
-    print "dumping json..."
+    print("dumping json...")
     out = {'nodes': nodes, 'links': links}
     with open(path, 'w') as f:
         json.dump(out, f)

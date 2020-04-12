@@ -19,7 +19,7 @@ bias_dict = {'allsides': 0, 'left': 1, 'left-center': 2,
 def scrape_allsides():
     _, session = get_mysql_session(remote=False)
 
-    for category, type_id in type_dict.items():
+    for category, type_id in list(type_dict.items()):
         outrows = []
         page = requests.get(url_base % type_id)
         tree = html.fromstring(page.content)
@@ -32,7 +32,7 @@ def scrape_allsides():
             if not source_name:
                 pdb.set_trace()
 
-            print 'found source', source_name
+            print('found source', source_name)
 
             if '(cartoonist)' in source_name:
                 source_name = source_name[0:len(source_name) - 13]
@@ -51,13 +51,13 @@ def scrape_allsides():
 
             # try to find a forum in the database
             forum = session.query(Forum).filter(
-                Forum.name.ilike(u'%{0}%'.format(source_name))).first()
+                Forum.name.ilike('%{0}%'.format(source_name))).first()
 
             if forum is not None:
-                print "Matched %s with %s" % (source_name, forum.name)
+                print("Matched %s with %s" % (source_name, forum.name))
                 forum_pk = forum.pk
             else:
-                print "Found no match for", source_name
+                print("Found no match for", source_name)
                 forum_pk = None
 
             entry = AllSidesEntry(name=source_name, forum_pk=forum_pk,

@@ -7,7 +7,8 @@ try:
     with open('mysql-conf.json') as f:
         mysql_settings = json.load(f)
 except IOError:
-    print "Please supply valid MySQL connection details in mysql-conf.json."
+    print("Please supply valid MySQL connection details in mysql-conf.json.")
+    mysql_settings = None
 
 # TODO: this is ugly
 DATA_PATH = os.path.dirname(os.path.abspath(__file__)) + '/data/'

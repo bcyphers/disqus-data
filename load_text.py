@@ -39,9 +39,9 @@ from scipy.spatial import procrustes
 from scipy.stats.stats import pearsonr, spearmanr
 from scipy.optimize import curve_fit
 
-import plotly
-import plotly.plotly as py
-import plotly.graph_objs as go
+#import plotly
+#import plotly.plotly as py
+#import plotly.graph_objs as go
 
 from orm import *
 from word2vec_align import smart_align_gensim, procrustes_align, align_vocab
@@ -78,7 +78,10 @@ class StemTokenizer(object):
             #return None
 
         out = []
-        text = BeautifulSoup(doc, 'html.parser').get_text()
+        if '<' in doc:
+            text = BeautifulSoup(doc, 'html.parser').get_text()
+        else:
+            text = doc
 
         # this line is necessary because links surrounded by lots of periods or
         # commas (......google.com,,,,,,,,,,,,,) break the url regex. Any
@@ -87,7 +90,7 @@ class StemTokenizer(object):
         text = re.sub(',[,]+', ',', text)
 
         # replace unicode non-breaking spaces with normal spaces
-        text = re.sub(u'\xa0', u' ', text)
+        text = re.sub('\xa0', ' ', text)
 
         # replace all urls with __link__
         text = re.sub(url_parse.WEB_URL_REGEX, '__link__', text)
@@ -115,7 +118,7 @@ class PostMeta(object):
 
 def order_thread_posts(posts):
     # order a thread's posts by time, preserving the DAG within the thread
-    all_posts = sorted(posts.values(), key=lambda p: p.time)
+    all_posts = sorted(list(posts.values()), key=lambda p: p.time)
     top_level_posts = []
     for p in all_posts:
         # children will be added in chronological order
@@ -139,15 +142,29 @@ def order_thread_posts(posts):
     return ordered_posts
 
 
+def get_forum_count(forum):
+    Post = get_post_db(None, None)
+    engine, session = get_mysql_session()
+    with engine.connect() as con:
+        rs = con.execute("""SELECT COUNT(1) FROM forums STRAIGHT_JOIN
+                         posts_political ON forums.pk=posts_political.forum_pk
+                         WHERE forums.id = '%s';
+                         """ % forum)
+        return rs.fetchone()[0]
+
+
 def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
-                        end_time=None, limit=5000000, order=True):
-    start_time = start_time or TRUMP_START
-    Post = get_post_db(forum, start_time)
+                        end_time=None, limit=5000000, order=False,
+                        update=False, tokenize=False):
+    start_time = start_time or TRUMP_START - timedelta(days=365)
+    Post = get_post_db(None, start_time)
     engine, session = get_mysql_session()
 
-    print "querying for posts%s..." % ((' from forum ' + forum) if forum else '' +
-                                       (' from user %s' % author) if author else '')
+    print("querying for posts%s..." % ((' from forum ' + forum) if forum else '' +
+                                       (' from user %s' % author) if author else ''))
     query = session.query(Post)
+    if forum is not None:
+        query = query.filter(Post.forum == forum)
     if author is not None:
         if type(author) == list:
             query = query.filter(Post.author in authors)
@@ -162,43 +179,45 @@ def get_tokenized_posts(forum=None, author=None, adult=False, start_time=None,
         query = query.filter(Post.time <= end_time)
 
     query = query.limit(limit)
-    df = pd.read_sql(query.statement, query.session.bind)
+    df = pd.read_sql(query.statement, query.session.bind,
+                     index_col='id')
 
-    if order:
-        print "creating post graph..."
+    if tokenize:
+        tokenizer = StemTokenizer(False)
+        post_tokens = []
 
-        posts = {pid: PostMeta(pid, df.thread[pid], df.parent[pid], df.time[pid])
-                 for pid in df.index}
+        for pid in list(df.index):
+            tokens = ' '.join(tokenizer(df.raw_text[pid]))
+            if tokens is not None:
+                df.at[pid, 'tokens'] = tokens
+            if update:
+                session.query(Post).get(pid).tokens = tokens
 
-        print len(posts), "found"
-        print "ordering posts..."
+    session.commit()
 
-        ordered_posts = []
-        all_threads = OrderedDict()
-        # need to order threads by time, and have a set of posts for each thread
-        # (these can be ordered later)
-        for p in posts.values():
-            if p.thread not in all_threads:
-                all_threads[p.thread] = {p.id: p}
-            else:
-                all_threads[p.thread][p.id] = p
+    return df
 
-        for t, tposts in all_threads.items():
-            ordered_posts.extend(order_thread_posts(tposts))
 
-        posts = [df.raw_text[p.id] for p in ordered_posts]
+def get_author_forum_vectors():
+    engine, session = get_mysql_session()
+    with engine.connect() as con:
+        df = pd.read_sql("""select author, forums.id as forum, likes,
+                         dislikes, count from author_forum_likes join
+                         forums on author_forum_likes.forum_pk = forums.pk;""",
+                         con, index_col=['author', 'forum'])
 
-    else:
-        posts = df.raw_text
+    return df.unstack(fill_value=0)
 
-    print "tokenizing posts..."
-    tokenize = StemTokenizer(False)
-    post_tokens = []
-    for p in posts:
-        tokens = tokenize(p)
-        if tokens is not None:
-            post_tokens.append(tokens)
-    return post_tokens
+
+def get_forum_biases():
+    forum_biases = {}
+    with open('./all_forums.txt') as f:
+        for line in f:
+            elts = line.strip().split()
+            if len(elts) > 1:
+                forum_biases[elts[0]] = int(elts[1])
+
+    return forum_biases
 
 
 class VectorClassifier(object):
@@ -210,13 +229,8 @@ class VectorClassifier(object):
     def __init__(self, forums=None, start_time=None, end_time=None, limit=None):
         self.forum_biases = {}
         if forums is None:
-            self.forums = []
-            with open('./all_forums.txt') as f:
-                for line in f:
-                    elts = line.strip().split()
-                    self.forums.append(elts[0])
-                    if len(elts) > 1:
-                        self.forum_biases[elts[0]] = int(elts[1])
+            self.forum_biases = get_forum_biases()
+            self.forums = list(self.forum_biases.keys())
         else:
             self.forums = forums
 
@@ -230,7 +244,7 @@ class VectorClassifier(object):
 
     @property
     def words(self):
-        self._words = self.models.values()[0].wv.index2word
+        self._words = list(self.models.values())[0].wv.index2word
         return self._words
 
     def load_data(self, forum, cache='./post_cache/3gram'):
@@ -244,14 +258,14 @@ class VectorClassifier(object):
 
         if os.path.isfile(fname):
             # load stuff if we can
-            print 'loading posts for forum %s...' % forum
+            print('loading posts for forum %s...' % forum)
             with open(fname) as f:
                 for l in f:
                     posts.append(l.decode('utf8').strip())
             return posts
 
         # otherwise query, clean, etc.
-        print 'querying for posts for forum %s...' % forum
+        print('querying for posts for forum %s...' % forum)
         Post = get_post_db(forum=forum)
         engine, session = get_mysql_session()
         query = session.query(Post.id, Post.tokens)
@@ -266,10 +280,10 @@ class VectorClassifier(object):
 
         posts = [t for t in df.tokens if t is not None]
         if not len(posts):
-            print 'forum is not tokenized.'
+            print('forum is not tokenized.')
             return None
 
-        print 'saving cleaned posts...'
+        print('saving cleaned posts...')
         with open(fname, 'w') as f:
             for p in posts:
                 tstr = p + '\n'
@@ -288,7 +302,7 @@ class VectorClassifier(object):
         for forum in self.forums:
             fname = './post_cache_1gram/%s.txt' % forum
 
-            print 'loading data...'
+            print('loading data...')
             docs = self.load_data(forum)
             if len(docs) > 1e5:
                 docs = [docs[i] for i in np.random.choice(len(docs),
@@ -296,13 +310,13 @@ class VectorClassifier(object):
 
             posts = [d.split() for d in docs]
 
-            print 'updating bigrams...'
+            print('updating bigrams...')
             bigrams.add_vocab(posts)
 
-            print 'converting to bigrams...'
+            print('converting to bigrams...')
             posts = bigrams[posts]
 
-            print 'updating trigrams...'
+            print('updating trigrams...')
             trigrams.add_vocab(posts)
 
         return bigrams, trigrams
@@ -328,7 +342,7 @@ class VectorClassifier(object):
         for forum in self.forums:
             fname = './model_cache/3gram/%s.bin' % forum
             if os.path.isfile(fname):
-                print 'loading model for forum %s...' % forum
+                print('loading model for forum %s...' % forum)
                 self.models[forum] = Word2Vec.load(fname)
                 continue
 
@@ -337,15 +351,15 @@ class VectorClassifier(object):
                 continue
 
             if len(posts) > max_posts:
-                print 'Too many posts found (%d). Sampling %d posts...' % \
-                    (len(posts), max_posts)
+                print('Too many posts found (%d). Sampling %d posts...' % \
+                    (len(posts), max_posts))
                 posts = [posts[i] for i in
                          np.random.choice(len(posts), size=max_posts)]
 
             for i in range(len(posts)):
                 posts[i] = posts[i].split()
 
-            print 'training model for forum %s on %d posts' % (forum, len(posts))
+            print('training model for forum %s on %d posts' % (forum, len(posts)))
             # we need hs=1, negative=0 to do scoring (use hierarchical softmax,
             # no negative sampling)
             model = Word2Vec(posts, size=100, window=5, min_count=10,
@@ -359,10 +373,10 @@ class VectorClassifier(object):
         Procrustes superimposition (https://en.wikipedia.org/wiki/Procrustes_analysis)
         so that we can compare embeddings across models.
         """
-        print 'filtering vocabularies...'
+        print('filtering vocabularies...')
         # use the model with the biggest vocab size as the first reference
-        items = sorted(self.models.items(),
-                       key=lambda i: -len(i[1].wv.vocab.keys()))
+        items = sorted(list(self.models.items()),
+                       key=lambda i: -len(list(i[1].wv.vocab.keys())))
         ref_model = items[0][1]
         for k, m in items[1:]:
             m.wv = smart_align_gensim(ref_model.wv, m.wv)
@@ -377,28 +391,28 @@ class VectorClassifier(object):
             align_vocab(ref_model.wv.index2word, m.wv)
 
         self.sim_index = {w: i for i, w in
-                          enumerate(self.models.values()[0].wv.index2word)}
+                          enumerate(list(self.models.values())[0].wv.index2word)}
         return
 
         # TODO: find out why this doesn't work
-        print 'finding average alignment...'
+        print('finding average alignment...')
 
         for i in range(20):
-            print i
+            print(i)
             # find the "mean" shape of all the embeddings
             sums = np.zeros(ref_model.wv.syn0norm.shape)
-            for m in self.models.values():
+            for m in list(self.models.values()):
                 sums += m.wv.syn0norm
             mean_shape = normalize(sums)
 
-            for k, m in self.models.items():
+            for k, m in list(self.models.items()):
                 # align each model with the mean vector space
                 m1, m2, score = procrustes(mean_shape, m.wv.syn0norm)
                 m.wv.syn0norm = m.wv.syn0 = m2
-                print k, score
+                print(k, score)
 
     def score_partisanship_corr(self, word):
-        forums, biases = zip(*self.forum_biases.items())
+        forums, biases = list(zip(*list(self.forum_biases.items())))
         series = []
         for f in forums:
             ix = self.models[f].wv.index2word.index(word)
@@ -417,14 +431,14 @@ class VectorClassifier(object):
         for i, w in enumerate(words):
             parts[w] = self.score_partisanship_corr(w)
             if (i+1) % 100 == 0:
-                print "finished with %d words" % (i+1)
+                print("finished with %d words" % (i+1))
         self.partisanships['corr'] = parts
 
     def compute_partisanship_counts(self):
         if self.partisanships['counts'] is not None:
             return
 
-        forums, biases = zip(*self.forum_biases.items())
+        forums, biases = list(zip(*list(self.forum_biases.items())))
         counts = np.zeros((len(self.words), len(forums)))
 
         for i, f in enumerate(forums):
@@ -447,13 +461,13 @@ class VectorClassifier(object):
         if self.partisanships['cos'] is not None:
             return
 
-        left = [f for f, b in self.forum_biases.items() if b <= 2]
-        right = [f for f, b in self.forum_biases.items() if b >= 4]
+        left = [f for f, b in list(self.forum_biases.items()) if b <= 2]
+        right = [f for f, b in list(self.forum_biases.items()) if b >= 4]
 
         #models = {f: self.models[f].wv for f in left + right}
         models = self.map_to_same_space(left + right)
 
-        print 'computing cross-class distances...'
+        print('computing cross-class distances...')
         dist = np.zeros(len(self.words))
         count = 0
         for f1 in left:
@@ -467,7 +481,7 @@ class VectorClassifier(object):
                 count += 1.
         dist /= count
 
-        print 'computing intra-class distances...'
+        print('computing intra-class distances...')
         same_dist = np.zeros(len(self.words))
         count = 0
         for forums in [right, left]:
@@ -501,24 +515,24 @@ class VectorClassifier(object):
 
     def get_similarities(self, low_mem=True):
         if self.similarities:
-            print 'already done.'
+            print('already done.')
         else:
-            print 'computing similarity matrices...'
+            print('computing similarity matrices...')
             self.similarities = {}
             np.save('similarity_cache/vocab',
-                    np.array(self.models.values()[0].wv.index2word))
+                    np.array(list(self.models.values())[0].wv.index2word))
             for f in self.forums:
-                print f
+                print(f)
                 self.similarities[f] = cosine_similarity(self.models[f].wv.syn0)
                 ## LOW MEMORY MODE
                 if low_mem:
-                    print 'saving matrix for', f
+                    print('saving matrix for', f)
                     np.save('similarity_cache/' + f, self.similarities[f])
                     del self.similarities[f]
 
     def get_word_proportions(self, words):
         fractions = defaultdict(float)
-        print 'getting word weights...'
+        print('getting word weights...')
         for f in self.forum_biases:
             vocab = self.models[f].wv.vocab
             total_count = sum(vocab[w].count for w in words)
@@ -528,7 +542,7 @@ class VectorClassifier(object):
         for w in fractions:
             fractions[w] /= len(self.forum_biases)
 
-        print 'done.'
+        print('done.')
         return fractions
 
     def get_word_counts(self, words):
@@ -540,7 +554,7 @@ class VectorClassifier(object):
         models = {}
         self.get_similarities()
 
-        mean_sims = np.zeros(self.similarities.values()[0].shape)
+        mean_sims = np.zeros(list(self.similarities.values())[0].shape)
         for f in forums:
             s = self.similarities[f]
             mean_sims += s
@@ -549,17 +563,17 @@ class VectorClassifier(object):
         if not do_pca:
             for f in forums:
                 models[f] = {w: self.similarities[f][i, :] for w, i in
-                             self.sim_index.items()}
+                             list(self.sim_index.items())}
         else:
-            print 'fitting PCA...'
+            print('fitting PCA...')
             pca = PCA(n_components=100)
             pca.fit(mean_sims)
 
-            print 'PCA transforming...'
+            print('PCA transforming...')
             for f in forums:
-                print f
+                print(f)
                 vectors = pca.transform(self.similarities[f])
-                models[f] = {w: vectors[i, :] for w, i in self.sim_index.items()}
+                models[f] = {w: vectors[i, :] for w, i in list(self.sim_index.items())}
 
         return models
 
@@ -569,7 +583,7 @@ class VectorClassifier(object):
         combined models against its representation in the dataset.
         """
         combinations = []
-        forums = self.forum_biases.keys()
+        forums = list(self.forum_biases.keys())
         for i in range(len(forums)):
             for j in range(i+1, len(forums)):
                 combinations.append((forums[i], forums[j]))
@@ -592,7 +606,7 @@ class VectorClassifier(object):
         words = [w for w in words if w not in self.stopwords]
 
         # x is log(word counts), y is word "partisanship"
-        x, y = np.array(zip(*[(np.log(weights[w]), parts[w]) for w in words]))
+        x, y = np.array(list(zip(*[(np.log(weights[w]), parts[w]) for w in words])))
         layout = go.Layout(
             title='%s partisanship vs. overall word frequency' % method_str,
             hovermode='closest',
@@ -627,11 +641,11 @@ class VectorClassifier(object):
         vocabulary
         """
         # sort forums by partisanship
-        forums = sorted(self.forum_biases.keys(), key=self.forum_biases.get)
+        forums = sorted(list(self.forum_biases.keys()), key=self.forum_biases.get)
         dists = np.zeros((len(self.forum_biases), len(self.words)))
         biases = []
 
-        print 'computing similarities...'
+        print('computing similarities...')
         for i, (forum, bias) in enumerate(self.forum_biases.items()):
             biases.append(bias)
             dists[i, :] = self.get_similarities_word(forum, word)
@@ -639,13 +653,13 @@ class VectorClassifier(object):
         if do_shuf:
             np.random.shuffle(biases)
 
-        print 'running regressions...'
+        print('running regressions...')
         fits = [tuple(np.polyfit(biases, dists[:, i], 1))
                 for i in range(len(self.words))]
-        print 'computing correlations...'
+        print('computing correlations...')
         corrs = [tuple(pearsonr(dists[:, i], biases))
                  for i in range(len(self.words))]
-        print 'done.'
+        print('done.')
 
         return fits, corrs
 
@@ -654,7 +668,7 @@ class VectorClassifier(object):
         Find and plot the correlation between word frequency and partisanship
         for each word in the shared vocabulary
         """
-        forums, biases = zip(*self.forum_biases.items())
+        forums, biases = list(zip(*list(self.forum_biases.items())))
         counts = np.zeros((len(forums), len(self.words)))
 
         for i, f in enumerate(forums):
@@ -663,11 +677,11 @@ class VectorClassifier(object):
             counts[i, :] = np.array([np.log(vocab[w].count / float(total_count))
                                      for w in self.words])
 
-        print 'running regressions...'
+        print('running regressions...')
         fits = [tuple(np.polyfit(biases, counts[:, i], 1)) for i in range(counts.shape[1])]
-        print 'computing correlations...'
+        print('computing correlations...')
         corrs = [tuple(pearsonr(counts[:, i], biases)) for i in range(counts.shape[1])]
-        print 'done.'
+        print('done.')
 
         return fits, corrs
 
@@ -686,8 +700,8 @@ class VectorClassifier(object):
         else:
             fits, corrs = self.find_partisan_count_correlations()
             title = 'Word count correlations'
-        m = np.array(zip(*fits)[0])
-        r, p = np.array(zip(*corrs))
+        m = np.array(list(zip(*fits))[0])
+        r, p = np.array(list(zip(*corrs)))
         text = np.array(self.words)
         weights = self.get_word_proportions(text)
 
@@ -700,7 +714,7 @@ class VectorClassifier(object):
         left_m, right_m = np.abs(m[left]), np.abs(m[right])
         left_t, right_t = text[left], text[right]
 
-        print 'generating plot...'
+        print('generating plot...')
         layout = go.Layout(
             title=title,
             hovermode='closest',
@@ -714,14 +728,14 @@ class VectorClassifier(object):
                                  marker=dict(color='rgb(255,0,0)'))
         #trace = go.Scatter(x=x, y=np.array(r) ** 2, mode='markers', text=text)
         py.plot(go.Figure(data=[left_trace, right_trace], layout=layout), filename='m-v-corr')
-        print 'done.'
+        print('done.')
 
     def plot_partisan_similarity(self, w1, w2):
         """ Plot the similarity score of two words against partisan bias """
         biases = []
         similarities = []
         forums = []
-        for f, bias in self.forum_biases.items():
+        for f, bias in list(self.forum_biases.items()):
             forums.append(f)
             biases.append(bias)
             similarities.append(self.models[f].similarity(w1, w2))
@@ -732,7 +746,7 @@ class VectorClassifier(object):
         m, b = np.polyfit(biases, similarities, 1)
         fit = [m * x + b for x in range(1, 6)]
 
-        print 'generating plot...'
+        print('generating plot...')
         layout = go.Layout(
             title=title,
             hovermode='closest',
@@ -741,17 +755,17 @@ class VectorClassifier(object):
             showlegend=False)
 
         trace = go.Scatter(x=biases, y=similarities, mode='markers', text=forums)
-        fit_trace = go.Scatter(x=range(1, 6), y=fit, mode='lines')
+        fit_trace = go.Scatter(x=list(range(1, 6)), y=fit, mode='lines')
         py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
                 filename='word-similarity')
-        print 'done.'
+        print('done.')
 
     def plot_partisan_count(self, word):
         """ Plot the log probability of one word against partisan bias """
         forums = []
         biases = []
         counts = []
-        for f, bias in self.forum_biases.items():
+        for f, bias in list(self.forum_biases.items()):
             forums.append(f)
             biases.append(bias)
             vocab = self.models[f].wv.vocab
@@ -764,7 +778,7 @@ class VectorClassifier(object):
         m, b = np.polyfit(biases, counts, 1)
         fit = [m * x + b for x in range(1, 6)]
 
-        print 'generating plot...'
+        print('generating plot...')
         layout = go.Layout(
             title=title,
             hovermode='closest',
@@ -773,10 +787,10 @@ class VectorClassifier(object):
             showlegend=False)
 
         trace = go.Scatter(x=biases, y=counts, mode='markers', text=forums)
-        fit_trace = go.Scatter(x=range(1, 6), y=fit, mode='lines')
+        fit_trace = go.Scatter(x=list(range(1, 6)), y=fit, mode='lines')
         py.plot(go.Figure(data=[trace, fit_trace], layout=layout),
                 filename='word-proportion')
-        print 'done.'
+        print('done.')
 
     def relevant(self, post):
         # is there at least one "indicator" word in the post?
@@ -822,24 +836,24 @@ class EmbeddingAligner(object):
             fname = 'w2v_models/%s_%s_%s.bin' % (self.forum, win_start, delta)
 
             if os.path.isfile(fname):
-                print 'loading model for forum %s, date %s...' % (self.forum,
-                                                                  win_start)
+                print('loading model for forum %s, date %s...' % (self.forum,
+                                                                  win_start))
                 self.models[idx] = Word2Vec.load(fname)
             else:
                 query = session.query(Post.id, Post.tokens)\
                     .filter(Post.time >= win_start)\
                     .filter(Post.time < win_end)
-                print "querying for range (%s, %s)" % (win_start, win_end)
+                print("querying for range (%s, %s)" % (win_start, win_end))
 
                 posts = [i[1].split() for i in query.all()]
 
-                print "building model"
+                print("building model")
                 # we need hs=1, negative=0 to do scoring (use hierarchical softmax,
                 # no negative sampling)
                 model = Word2Vec(posts, size=100, window=5, min_count=10,
                                  workers=20, hs=1, negative=0)
 
-                print "saving"
+                print("saving")
                 model.save(fname, ignore=[])
                 self.models[idx] = model
 
@@ -857,6 +871,6 @@ class EmbeddingAligner(object):
 
     def plot_pair_drift(self, word1, word2):
         """ plot the change in the way two words relate to each other """
-        for i, model in self.models.items():
+        for i, model in list(self.models.items()):
             pass
 

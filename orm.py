@@ -30,7 +30,8 @@ def get_mysql_session():
 
 def get_post_db(forum=None, start_time=None):
     if forum is None:
-        table = 'posts_%02d_%d' % (start_time.month, start_time.year)
+        #table = 'posts_%02d_%d' % (start_time.month, start_time.year)
+        table = 'posts_political'
     else:
         table = 'posts_%s' % forum.replace('-', '_')
 
@@ -43,7 +44,7 @@ def get_post_db(forum=None, start_time=None):
         id = Column(BigInteger, primary_key=True, autoincrement=False)
 
         ## relations
-        # this is here so that forums which arent in the "forums" table yet can be
+        # "forum" column is here so that forums which arent in the "forums" table yet can be
         # pulled down later
         forum = Column(Unicode(255))
         forum_pk = Column(BigInteger)
@@ -66,6 +67,7 @@ def get_post_db(forum=None, start_time=None):
         is_flagged = Column(Boolean)
         is_spam = Column(Boolean)
 
+    print(('generated post table', Post))
     posts_tables[forum] = Post
     return Post
 

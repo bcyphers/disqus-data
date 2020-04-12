@@ -20,7 +20,7 @@ def get_forum_bias(forum):
 
     pk = session.query(Forum.pk).filter(Forum.id == f).first()
     if not pk:
-        continue
+        return
     pk = pk[0]
 
     select_ = select([allsides, allsides_forums]).where(
@@ -74,7 +74,7 @@ def rolling_avg(a, n):
 
 def plot_posts_per_day(forum, window=7):
     days = sorted(get_forum_posts_per_day(forum).items())
-    x, y = zip(*days)
+    x, y = list(zip(*days))
     ny = rolling_avg(y, window)
     nx = x[window-1:]
 
@@ -104,7 +104,7 @@ def get_user_forums(year=2017, cutoff=2):
         user_docs[user] += (int(count) * [str(forum)])
         user_counts[user] += 1
 
-    for user, count in user_counts.iteritems():
+    for user, count in user_counts.items():
         if count < cutoff:
             del user_docs[user]
 
@@ -145,35 +145,35 @@ def tokenize_posts(table=None, forum=None, start_time=None, end_time=None):
 
     if start_time is None:
         # find the time of the first post for this forum that doesn't have tokens
-        print 'querying for first post...'
+        print('querying for first post...')
         start_time = session.query(func.min(Post.time))\
             .filter(Post.tokens == None).first()[0]
     if end_time is None:
-        print 'querying for last post...'
+        print('querying for last post...')
         end_time = session.query(func.max(Post.time))\
             .filter(Post.tokens == None).first()[0]
 
     window_start = start_time
     while window_start < end_time:
         window_end = min(window_start + timedelta(days=30), end_time)
-        print "querying for posts from %s between %s and %s" % (posts, window_start, window_end)
+        print("querying for posts from %s between %s and %s" % (posts, window_start, window_end))
 
         # query for all forum posts in our time window
         query = session.query(Post)\
             .filter(Post.time >= window_start)\
             .filter(Post.time < window_end)\
             .all()
-        print "found %d posts, tokenizing..." % len(query)
+        print("found %d posts, tokenizing..." % len(query))
 
         # tokenize each post and update the 'tokens' column
         checkpoint = datetime.now()
         for i, p in enumerate(query):
             p.tokens = ' '.join(tokenize(p.raw_text))
             if datetime.now() - checkpoint > timedelta(seconds=30):
-                print "tokenized %d posts" % (i + 1)
+                print("tokenized %d posts" % (i + 1))
                 checkpoint = datetime.now()
 
-        print "committing update..."
+        print("committing update...")
         session.commit()
         window_start += timedelta(days=30)
 

@@ -28,7 +28,7 @@ def load_sim_matrix(forums):
     # load the similarity matrices one at a time and save the subsamples to a
     # local numpy array
     for i, f in enumerate(forums):
-        print('loading similarity matrix for', f)
+        print(('loading similarity matrix for', f))
         fsims = np.load('similarity_cache/%s.npy' % f)
         # take the 1000 most partisan words x the 1000 most common words
         fsims = fsims[np.array(partisan_1k), :]
@@ -54,7 +54,7 @@ def load_sim_vector(forums, word, count=5000):
     # load the similarity matrices one at a time and save the vector including
     # `word` for each one
     for i, f in enumerate(forums):
-        print('loading similarity matrix for', f)
+        print(('loading similarity matrix for', f))
         fsims = np.load('similarity_cache/%s.npy' % f)
         arr = fsims[word_index, :]
         sim_mat[i, :] = arr[subsample]
@@ -68,9 +68,9 @@ def train_pca(keys, vocab, sim_mat, n_dims=10):
     topics = [pca_topic(vocab, pca, i) for i in range(n_dims)]
     for d in range(n_dims):
         var = pca.explained_variance_ratio_[d]
-        print('dimension %d: %.3f of variance' % (d, var))
-        print(topics[d][:20])
-        print(order_by_dim(keys, pca_vecs, d))
+        print(('dimension %d: %.3f of variance' % (d, var)))
+        print((topics[d][:20]))
+        print((order_by_dim(keys, pca_vecs, d)))
         print()
 
     return pca, pca_vecs, topics

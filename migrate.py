@@ -6,25 +6,25 @@ engine, session = get_mysql_session()
 def migrate_json(engine):
     Base.metadata.create_all(bind=engine)
 
-    for d in data.forum_details.values():
+    for d in list(data.forum_details.values()):
         pk = int(d['pk'])
         if session.query(Forum).get(pk):
-            print 'forum %s already exists in database' % d['name']
+            print('forum %s already exists in database' % d['name'])
             continue
 
-        print 'forum', d['name']
+        print('forum', d['name'])
 
         forum = Forum(pk=pk,
                       id=d['id'],
-                      name=unicode(d['name']),
-                      twitter_name=unicode(d['twitterName']),
-                      url=unicode(d['url']),
+                      name=str(d['name']),
+                      twitter_name=str(d['twitterName']),
+                      url=str(d['url']),
                       founder=int(d['founder']),
                       created_at=d['createdAt'],
                       alexa_rank=int(d.get('alexaRank', -1)),
-                      category=unicode(d['category']),
-                      description=unicode(d['raw_description']),
-                      guidelines=unicode(d['raw_guidelines']),
+                      category=str(d['category']),
+                      description=str(d['raw_description']),
+                      guidelines=str(d['raw_guidelines']),
                       language=str(d['language']),
                       ads_enabled=bool(d['settings']['adsEnabled']),
                       ads_video_enabled=bool(d['settings']['adsVideoEnabled']),

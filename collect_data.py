@@ -54,11 +54,11 @@ def save_json(data, name):
         with open(path, 'w') as out:
             json.dump(data, out)
     except KeyboardInterrupt as e:
-        print 'KeyboardInterrupt. Restoring backup file...'
+        print('KeyboardInterrupt. Restoring backup file...')
         shutil.copyfile(bakpath, path)
         sys.exit(0)
     except Exception as e:
-        print e
+        print(e)
 
 
 def load_json(name, default=None):
@@ -131,49 +131,49 @@ class DataPuller(object):
     @property
     def user_to_forums(self):
         if self._user_to_forums is None:
-            print 'loading user-forums'
+            print('loading user-forums')
             self._user_to_forums = load_json('user_to_forums', default={})
         return self._user_to_forums
 
     @property
     def forum_to_users(self):
         if self._forum_to_users is None:
-            print 'loading forum-users'
+            print('loading forum-users')
             self._forum_to_users = load_json('forum_to_users', default={})
         return self._forum_to_users
 
     @property
     def all_users(self):
         if self._all_users is None:
-            print 'loading user data'
+            print('loading user data')
             self._all_users = load_json('all_users', default={})
         return self._all_users
 
     @property
     def done_with(self):
         if self._done_with is None:
-            print 'loading done with'
+            print('loading done with')
             self._done_with = set(load_json('done_with', default=[]))
         return self._done_with
 
     @property
     def all_forum_threads(self):
         if self._all_forum_threads is None:
-            print 'loading all forum threads'
+            print('loading all forum threads')
             self._all_forum_threads = load_json('all_forum_threads', default={})
         return self._all_forum_threads
 
     @property
     def active_forum_threads(self):
         if self._active_forum_threads is None:
-            print 'loading top forum threads'
+            print('loading top forum threads')
             self._active_forum_threads = load_json('active_forum_threads', default={})
         return self._active_forum_threads
 
     @property
     def thread_posts(self):
         if self._thread_posts is None:
-            print 'loading top thread posts'
+            print('loading top thread posts')
             self._thread_posts = load_json('thread_posts', default={})
         return self._thread_posts
 
@@ -191,13 +191,13 @@ class DataPuller(object):
         """
         if self._all_threads is None:
             self._all_threads = {}
-            for ts in self.active_forum_threads().values():
+            for ts in list(self.active_forum_threads().values()):
                 self.all_threads.update({t: ts[t]['clean_title'] for t in ts})
         return self._all_threads
 
     def save_exit(self):
         """ Save all state and exit safely """
-        print 'saving all data...'
+        print('saving all data...')
 
         # save all json files
         if self._user_to_forums:
@@ -232,8 +232,8 @@ class DataPuller(object):
         i = 0
         errs = 0
 
-        print 'trying to pull', min_users - len(users), \
-            'more users for forum', forum
+        print('trying to pull', min_users - len(users), \
+            'more users for forum', forum)
 
         while len(users) < min_users:
             cursor = '%d:0:0' % (i * 100)
@@ -243,7 +243,7 @@ class DataPuller(object):
             except APIError as err:
                 raise err
             except FormattingError as err:
-                print err
+                print(err)
                 errs += 1
                 i += 1
                 if errs > 2:
@@ -263,7 +263,7 @@ class DataPuller(object):
                 if u['isPrivate']:
                     num_private += 1
 
-            print 'public:', len(users), 'private:', num_private
+            print('public:', len(users), 'private:', num_private)
 
             # break if there are no more pages
             if i > 0 and not res.cursor['hasNext']:
@@ -292,39 +292,39 @@ class DataPuller(object):
 
             # only get a few for each forum
             if with_data >= len(total_users) or with_data >= min_users:
-                print 'forum', forum, 'has enough users:', with_data
+                print('forum', forum, 'has enough users:', with_data)
                 continue
 
             to_go = min_users - with_data
 
-            print
-            print 'pulling data for', to_go, 'users from forum', forum, 'with',\
-                activity.get(forum), 'posts in 30 days'
+            print()
+            print('pulling data for', to_go, 'users from forum', forum, 'with',\
+                activity.get(forum), 'posts in 30 days')
 
             # for each of the most active users of this forum, find what forums
             # they're most active on
             for uid in without_data[:to_go]:
-                print 'pulling most active forums for user', uid
+                print('pulling most active forums for user', uid)
                 try:
                     res = self.api.request('users.listMostActiveForums',
                                            user=uid, limit=100)
                     self.user_to_forums[uid] = [r.get('id') for r in res]
                 except APIError as err:
                     if int(err.code) == 2:
-                        print 'bad user id:', uid
+                        print('bad user id:', uid)
                         self.forum_to_users[forum].remove(uid)
                     elif int(err.code) == 12:
                         # user is private: remove them from the forum's list
-                        print 'user id', uid, 'is private'
+                        print('user id', uid, 'is private')
                         self.forum_to_users[forum].remove(uid)
                     else:
                         return int(err.code)
                 except FormattingError as err:
-                    print 'Could not parse response:'
-                    print err
+                    print('Could not parse response:')
+                    print(err)
                     self.forum_to_users[forum].remove(uid)
 
-            print 'saving user-forum data...'
+            print('saving user-forum data...')
             save_json(self.user_to_forums, 'user_to_forums')
 
         return 0    # s'all good, man
@@ -339,14 +339,14 @@ class DataPuller(object):
 
         # loop over forums in order of most active
         for forum in forums:
-            print 'pulling most active users for forum', repr(forum), 'with', \
-                activity[forum], 'posts in 30 days'
+            print('pulling most active users for forum', repr(forum), 'with', \
+                activity[forum], 'posts in 30 days')
             try:
                 self.forum_to_users[forum] = self.pull_users(forum, min_users)
             except APIError as err:
                 return int(err.code)
 
-            print 'saving forum-user data...'
+            print('saving forum-user data...')
             save_json(self.forum_to_users, 'forum_to_users')
             save_json(list(self.done_with), 'done_with')
             save_json(self.all_users, 'all_users')
@@ -356,10 +356,10 @@ class DataPuller(object):
         Pull recent forum activity, see how many posts there are, and see if any
         of it is on threads from this year.
         """
-        print 'Checking for recent posts in forum', forum
+        print('Checking for recent posts in forum', forum)
         if 'lastPost' in self.forum_details[forum] and \
                 'posts30d' in self.forum_details[forum]:
-            print '...already found!'
+            print('...already found!')
             return
 
         # pull most popular threads
@@ -367,14 +367,14 @@ class DataPuller(object):
             res = self.api.request('threads.listPopular', forum=forum,
                                    interval='30d', limit=100)
         except APIError as err:
-            print err
+            print(err)
             code = int(err.code)
             if code == 22:
                 res = []
             else:
                 return code
         except FormattingError as err:
-            print err
+            print(err)
             return
 
         # find the most recent, popular post
@@ -396,38 +396,38 @@ class DataPuller(object):
         self.forum_details[forum]['posts30d'] = num_recent_posts
         self.forum_details[forum]['posts30dEnd'] = datetime.date.today().isoformat()
 
-        print 'retrieved', len(recent_threads), 'threads with', \
-            num_recent_posts, 'posts'
-        print 'saving data...'
+        print('retrieved', len(recent_threads), 'threads with', \
+            num_recent_posts, 'posts')
+        print('saving data...')
         save_json(self.forum_details, 'forum_details')
-        print 'done.'
+        print('done.')
 
     def pull_forum_details(self, num_forums=-1):
         # first, get all forums that are part of our graph
-        for f in self.forum_to_users.keys():
+        for f in list(self.forum_to_users.keys()):
             if f not in self.forum_details:
-                print 'requesting data for forum', f
+                print('requesting data for forum', f)
                 res = self.api.request('forums.details', forum=f)
                 self.forum_details[f] = res
-                print 'saving forum data...'
+                print('saving forum data...')
                 save_json(self.forum_details, 'forum_details')
 
         # start getting the rest
         if not self.forum_counts:
             # this function pulls counts from the full database
             self.forum_counts = get_forum_counts(self.session)
-        items = [i for i in self.forum_counts.items()
+        items = [i for i in list(self.forum_counts.items())
                  if i[0] not in self.forum_details]
         forums = sorted(items, key=lambda i: -i[1])
 
         for f, w in forums[:num_forums]:
             if f not in self.forum_details:
-                print 'requesting data for forum', f, 'with', w, 'posts'
+                print('requesting data for forum', f, 'with', w, 'posts')
                 try:
                     res = self.api.request('forums.details', forum=f)
                 except APIError as err:
                     if int(err.code) == 13:
-                        print 'API limit exceeded'
+                        print('API limit exceeded')
                         return 13
                     # Invalid argument: remove thread
                     elif int(err.code) == 2:
@@ -436,23 +436,23 @@ class DataPuller(object):
                         pdb.set_trace()
                         return err.code
                 except FormattingError as err:
-                    print err
+                    print(err)
                     continue
 
                 self.forum_details[f] = res
                 d = res
-                print 'saving data for forum', f
+                print('saving data for forum', f)
                 forum = Forum(pk=int(d['pk']),
                               id=d['id'],
-                              name=unicode(d['name']),
-                              twitter_name=unicode(d['twitterName']),
-                              url=unicode(d['url']),
+                              name=str(d['name']),
+                              twitter_name=str(d['twitterName']),
+                              url=str(d['url']),
                               founder=int(d['founder']),
                               created_at=d['createdAt'],
                               alexa_rank=-1,
-                              category=unicode(d['category']),
-                              description=unicode(d['raw_description']),
-                              guidelines=unicode(d['raw_guidelines']),
+                              category=str(d['category']),
+                              description=str(d['raw_description']),
+                              guidelines=str(d['raw_guidelines']),
                               language=str(d['language']),
                               ads_enabled=bool(d['settings'].get('adsEnabled')),
                               ads_video_enabled=bool(d['settings'].get('adsVideoEnabled')),
@@ -489,7 +489,7 @@ class DataPuller(object):
         alexa_api = awis.AwisApi(access_id, secret)
         rank_key = '//{%s}Rank' % alexa_api.NS_PREFIXES['awis']
 
-        for f, dets in self.forum_details.iteritems():
+        for f, dets in self.forum_details.items():
             # only pull sites with URLs, which aren't disqus channels
             if not f.startswith('channel-') and dets['url'] and \
                     'alexaRank' not in dets:
@@ -497,17 +497,17 @@ class DataPuller(object):
                 try:
                     rank = int(tree.find(rank_key).text)
                 except TypeError:
-                    print 'could not parse', repr(tree.find(rank_key).text), \
-                        'for forum', f, 'url', dets['url']
+                    print('could not parse', repr(tree.find(rank_key).text), \
+                        'for forum', f, 'url', dets['url'])
                     continue
 
-                print 'site', dets['url'], 'is Alexa rank', rank
+                print('site', dets['url'], 'is Alexa rank', rank)
                 dets['alexaRank'] = rank
                 save_json(self.forum_details, 'forum_details')
 
     def pull_all_forum_activity(self):
         weights = self.get_weights()
-        items = sorted(self.forum_details.items(), key=lambda i:weights[i[0]],
+        items = sorted(list(self.forum_details.items()), key=lambda i:weights[i[0]],
                        reverse=True)
         for f, d in items:
             if 'lastPost' in d and 'posts30d' in d:
@@ -529,7 +529,7 @@ class DataPuller(object):
 
         assert thread not in self.thread_posts
 
-        print 'pulling first', total_posts, 'posts for thread', thread
+        print('pulling first', total_posts, 'posts for thread', thread)
 
         # pull first post in thread
         res = self.api.request('threads.listPosts', thread=thread,
@@ -557,7 +557,7 @@ class DataPuller(object):
 
             # count number of posts
             num_posts = len(self.thread_posts[thread])
-            print 'retrieved', num_posts, 'posts'
+            print('retrieved', num_posts, 'posts')
 
             for p in posts:
                 dic = {'id': p['id'],
@@ -567,7 +567,7 @@ class DataPuller(object):
                        'points': p['points']}
                 all_data.append(dic)
 
-        print 'saving thread data...'
+        print('saving thread data...')
         with open(DATA_PATH + 'threads/%s.json' % thread, 'w') as f:
             # save the thread in its own file
             json.dump(all_data, f)
@@ -577,13 +577,13 @@ class DataPuller(object):
         """ Pull all posts for a certain number of threads for each forum """
 
         all_threads = []
-        for forum, threads in self.active_forum_threads.items():
+        for forum, threads in list(self.active_forum_threads.items()):
             if forum not in self.forum_details or \
                     self.forum_details[forum]['language'] != 'en':
                 continue
 
             # only first n_threads per forum
-            ts = sorted(threads.items(),
+            ts = sorted(list(threads.items()),
                         key=lambda i: -i[1]['postsInInterval'])[:n_threads]
             all_threads.extend([(forum, t) for i, t in ts if i not in self.thread_posts])
 
@@ -592,27 +592,27 @@ class DataPuller(object):
 
         # loop indefinitely, gathering data
         for forum, thread in all_threads:
-            print 'pulling data for thread', repr(thread['clean_title']), \
-                'from forum', thread['forum']
+            print('pulling data for thread', repr(thread['clean_title']), \
+                'from forum', thread['forum'])
             try:
                 self.pull_thread_posts(thread['id'])
             except APIError as err:
-                print err
+                print(err)
                 # API request limit: exit
                 if int(err.code) == 13:
-                    print 'exiting'
+                    print('exiting')
                     break
 
                 # Invalid argument: remove thread
                 if int(err.code) == 2:
-                    print
+                    print()
                     del self.active_forum_threads[forum][thread['id']]
                     save_json(self.active_forum_threads, 'active_forum_threads')
 
-                print 'skipping thread', repr(thread['clean_title'])
+                print('skipping thread', repr(thread['clean_title']))
             except FormattingError as err:
-                print err
-                print 'skipping thread', repr(thread['clean_title'])
+                print(err)
+                print('skipping thread', repr(thread['clean_title']))
 
     def pull_forum_threads(self, forum):
         """ Pull all thread metadata for a certain forum """
@@ -627,7 +627,7 @@ class DataPuller(object):
             # if we already have threads for this forum, start our query after
             # the last thread we saw
             times = [dateutil.parser.parse(d['createdAt']) for t, d in
-                     self.all_forum_threads[forum].items() if t != 'complete']
+                     list(self.all_forum_threads[forum].items()) if t != 'complete']
             start_time = max(times)
             total_posts = len(self.all_forum_threads[forum])
 
@@ -635,7 +635,7 @@ class DataPuller(object):
         end_time = add_month(TRUMP_START)
         last_time = start_time
 
-        print 'pulling all threads for forum', forum
+        print('pulling all threads for forum', forum)
 
         # pull all threads in 30-day window
         cursor = None
@@ -652,13 +652,13 @@ class DataPuller(object):
                                            since=start_time.isoformat())
 
             except APIError as err:
-                print err
-                print 'saving thread data...'
+                print(err)
+                print('saving thread data...')
                 self.all_forum_threads[forum]['complete'] = False
                 save_json(self.all_forum_threads, 'all_forum_threads')
                 sys.exit(1)
             except FormattingError as err:
-                print err
+                print(err)
                 return
 
             if not res.cursor['hasNext']:
@@ -671,13 +671,13 @@ class DataPuller(object):
             last_time = dateutil.parser.parse(res[-1]['createdAt'])
             self.all_forum_threads[forum].update({t['id']: t for t in threads})
 
-            print "pulled %d threads with %d posts, ending on %s" % \
-                (len(threads), num_posts, last_time)
+            print("pulled %d threads with %d posts, ending on %s" % \
+                (len(threads), num_posts, last_time))
 
-        print 'retrieved', len(self.all_forum_threads[forum].keys()), \
-            'threads with', total_posts, 'posts'
+        print('retrieved', len(list(self.all_forum_threads[forum].keys())), \
+            'threads with', total_posts, 'posts')
 
-        print 'saving thread data...'
+        print('saving thread data...')
         self.all_forum_threads[forum]['complete'] = True
         del self.all_forum_threads[forum]['complete']
         save_json(self.all_forum_threads, 'all_forum_threads')
@@ -685,7 +685,7 @@ class DataPuller(object):
     def pull_all_threads(self, forums):
         """ Pull all thread metadata from a list of forums """
 
-        print "pulling data from", len(forums), "forums"
+        print("pulling data from", len(forums), "forums")
 
         cutoff_time = datetime.datetime(2017, 1, 1)
 
@@ -693,7 +693,7 @@ class DataPuller(object):
         for forum in forums:
             if forum in self.all_forum_threads and \
                       self.all_forum_threads[forum].get('complete', True):
-                  print 'forum', forum, 'data already downloaded'
+                  print('forum', forum, 'data already downloaded')
                   continue
 
             self.pull_forum_activity(forum)
@@ -701,21 +701,21 @@ class DataPuller(object):
                 self.forum_details[forum].get('lastPost'))
 
             if last_time < cutoff_time:
-                print 'forum', forum, 'is dead since', last_time
+                print('forum', forum, 'is dead since', last_time)
             else:
-                print 'forum', forum, 'last post on', last_time
+                print('forum', forum, 'last post on', last_time)
                 self.pull_forum_threads(forum)
 
     def pull_all_posts_window(self, forum=None, start_time=TRUMP_START,
                               stop_time=add_month(TRUMP_START)):
         """ Pull every single post made on Disqus during a certain time window """
 
-        print 'pulling all posts ' + \
+        print('pulling all posts ' + \
             (('from forum %s ' % forum) if forum is not None else '') + \
-            'between', start_time, 'and', stop_time
+            'between', start_time, 'and', stop_time)
 
         Post = get_post_db(forum=forum, start_time=start_time)
-        print 'storing in table', Post.__tablename__
+        print('storing in table', Post.__tablename__)
 
         start_ts = time.mktime(start_time.timetuple())
         stop_ts = time.mktime(stop_time.timetuple())
@@ -740,7 +740,7 @@ class DataPuller(object):
         # loop indefinitely, gathering posts data
         while True:
             # pull another frame of posts
-            print 'pulling posts beginning %s...' % datetime.datetime.fromtimestamp(start_ts)
+            print('pulling posts beginning %s...' % datetime.datetime.fromtimestamp(start_ts))
             try:
                 kwargs = {'forum': ':all',
                           'limit': 100,
@@ -756,7 +756,7 @@ class DataPuller(object):
                 res = self.api.request('posts.list', **kwargs)
 
             except APIError as err:
-                print err
+                print(err)
                 code = int(err.code)
                 if code == 22:
                     # formatting error
@@ -777,7 +777,7 @@ class DataPuller(object):
             except FormattingError as err:
                 # Not sure what causes these, but sometimes the response is
                 # un-parseable. In this case we just try again
-                print err
+                print(err)
                 cursor = None
                 start_ts = last_ts
                 continue
@@ -788,18 +788,18 @@ class DataPuller(object):
                 # we're done?
                 continue
 
-            print 'storing %d posts between %s and %s...' % (len(results),
+            print('storing %d posts between %s and %s...' % (len(results),
                                                              results[0]['createdAt'],
-                                                             results[-1]['createdAt'])
+                                                             results[-1]['createdAt']))
             for p in results:
                 post_id = int(p['id'])
                 if session.query(Post).get(post_id):
-                    print 'post %d already exists in database' % post_id
+                    print('post %d already exists in database' % post_id)
                     continue
 
                 # query for forum if necessary
                 if forum is None:
-                    forum_id = unicode(p['forum'])
+                    forum_id = str(p['forum'])
                     forum_obj = session.query(Forum).filter(Forum.id == forum_id).first()
                     if forum_obj is not None:
                         forum_pk = forum_obj.pk
@@ -834,14 +834,14 @@ class DataPuller(object):
                     session.add(post)
                     session.commit()
                 except Exception as e:
-                    print
-                    print e
-                    print
+                    print()
+                    print(e)
+                    print()
                     pdb.set_trace()
 
                 last_ts = time.mktime(dateutil.parser.parse(p['createdAt']).timetuple())
 
-            print 'done.'
+            print('done.')
 
             # we're done if we go over time
             if last_ts > stop_ts:
@@ -854,7 +854,7 @@ class DataPuller(object):
     def get_deduped_ftu(self):
         """ Get a 'deduplicated' version of the forum_to_users dataset """
         ftu = {}
-        for forum, users in self.forum_to_users.items():
+        for forum, users in list(self.forum_to_users.items()):
             if forum in DEDUP:
                 users = set(users) | set(self.forum_to_users[DEDUP[forum]])
                 ftu[DEDUP[forum]] = list(users)
@@ -866,7 +866,7 @@ class DataPuller(object):
     def get_deduped_utf(self):
         """ Get a 'deduplicated' version of the user_to_forums dataset """
         utf = {}
-        for user, forums in self.user_to_forums.items():
+        for user, forums in list(self.user_to_forums.items()):
             deduped = set(f for f in forums if f not in DEDUP)
             deduped |= set(DEDUP[f] for f in forums if f in DEDUP)
             utf[user] = list(deduped)
@@ -886,7 +886,7 @@ class DataPuller(object):
             forum_to_users = self.forum_to_users
             user_to_forums = self.user_to_forums
 
-        for forum, users in forum_to_users.items():
+        for forum, users in list(forum_to_users.items()):
             # this will map forums to counts - the number of this forum's top
             # users who also frequent each other forum
             out_counts = defaultdict(int)
@@ -904,7 +904,7 @@ class DataPuller(object):
 
     def get_forum_activity(self, dedup=False):
         """ map forums to recent activity """
-        return {f: d.get('posts30d', 0) for f, d in self.forum_details.items()}
+        return {f: d.get('posts30d', 0) for f, d in list(self.forum_details.items())}
 
     def get_forum_threads(self):
         """
@@ -912,14 +912,14 @@ class DataPuller(object):
         downloaded posts
         """
         threads = {}
-        for f, ts in self.active_forum_threads.items():
+        for f, ts in list(self.active_forum_threads.items()):
             threads[f] = [t for t in ts if t in self.thread_posts]
         return threads
 
     def get_all_forums(self):
         """ It's in the name """
         forums = set()
-        for u, fs in self.user_to_forums.items():
+        for u, fs in list(self.user_to_forums.items()):
             forums |= set(fs)
 
         return list(forums)
@@ -936,11 +936,11 @@ class DataPuller(object):
         """
         forums = defaultdict(float)
 
-        for ftf in self.get_forum_edges(dedup=dedup).values():
-            for f, v in ftf.items():
+        for ftf in list(self.get_forum_edges(dedup=dedup).values()):
+            for f, v in list(ftf.items()):
                 forums[f] += v / float(sum(ftf.values()))
 
-        print 'Found', len(forums), 'forums total'
+        print('Found', len(forums), 'forums total')
 
         return forums
 
@@ -960,7 +960,7 @@ def rank_forums(data):
         return colored('dead', 'red')
 
     forums = [(d.get('alexaRank', 10e7), f, d) for f, d in
-              data.forum_details.items()]
+              list(data.forum_details.items())]
     forums.sort()
 
     #activity = puller.get_forum_activity()
@@ -968,7 +968,7 @@ def rank_forums(data):
 
     for rank, forum, details in forums:
         color = 'green' if forum in data.forum_to_users else 'red'
-        print colored(forum, color), rank, alive_str(details)
+        print(colored(forum, color), rank, alive_str(details))
 
         #n_users_tot = len(puller.forum_to_users.get(forum, []))
         #n_users_dl = len([u for u in puller.forum_to_users.get(forum, []) if u in
@@ -986,7 +986,7 @@ def sleep_until_next_hour():
     """ Just don't do anything until the clock strikes n+1 """
     t = datetime.datetime.now()
     next_time = datetime.datetime(t.year,t.month,t.day,(t.hour+1)%24, 1)
-    print 'Sleeping until %s...' % next_time
+    print('Sleeping until %s...' % next_time)
     time.sleep((next_time - t).seconds)
 
 
@@ -1011,7 +1011,7 @@ if __name__ == '__main__':
             #puller.pull_all_forum_activity()
             #code = puller.pull_forum_details(num_forums=1000)
             if code == 0:
-                print "Received code 0: done!"
+                print("Received code 0: done!")
                 sys.exit(0)
             elif code == 13:
                 continue

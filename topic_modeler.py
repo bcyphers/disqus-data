@@ -26,6 +26,7 @@ from sklearn.pipeline import make_pipeline
 
 from query_data import get_user_forums
 from load_text import StemTokenizer
+from functools import reduce
 
 
 # utility function for mapping top word features to their actual text
@@ -36,15 +37,15 @@ def topic_name(fnames, feats):
 
 
 def print_topics(vectorizer, model):
-    print
-    print 'Topics:'
+    print()
+    print('Topics:')
 
     word_names = vectorizer.get_feature_names()
     topics = []
     for group in model.components_:
         topic = topic_name(word_names, group)
         topics.append(topic)
-        print '%d.' % len(topics), topic
+        print('%d.' % len(topics), topic)
     return topics
 
 
@@ -69,11 +70,11 @@ class TopicModeler(object):
         self.n_features = n_features
         self.n_topics = n_topics
 
-        forum_threads = [i for i in self.data.get_forum_threads().items() if
+        forum_threads = [i for i in list(self.data.get_forum_threads().items()) if
                          len(i[1]) and i[0] in self.data.forum_details and
                          self.data.forum_details[i[0]]['language'] == 'en']
         self.docs = {f: ts for f, ts in forum_threads}
-        self.threads = reduce(lambda x, y: x + y, self.docs.values())
+        self.threads = reduce(lambda x, y: x + y, list(self.docs.values()))
 
     def load_thread(self, tid):
         # load comments for thread
@@ -83,7 +84,7 @@ class TopicModeler(object):
                 full_text = '\n'.join([p['text'] for p in js])
                 return full_text
         except IOError:
-            print 'data for thread', tid, 'is no good'
+            print('data for thread', tid, 'is no good')
             del self.data.thread_posts[tid]
             return ''
 
@@ -97,7 +98,7 @@ class TopicModeler(object):
         """
         docs = []
         activity = self.data.get_forum_activity()
-        forums = self.docs.keys()
+        forums = list(self.docs.keys())
         # TODO: should we sample proportional to sqrt or just the activity?
         probs = np.array([np.sqrt(activity[f]) for f in forums])
         probs /= sum(probs)
@@ -126,8 +127,8 @@ class TopicModeler(object):
         else:
             docs = self.sample_docs(sample_size)
 
-        print 'vectorizing', len(docs), 'documents of total size', \
-            sum([len(d) for d in docs])/1000, 'KB'
+        print('vectorizing', len(docs), 'documents of total size', \
+            sum([len(d) for d in docs])/1000, 'KB')
 
         vec_type = vec_type or self.vector_type
 
@@ -177,8 +178,8 @@ class TopicModeler(object):
         else:
             raise model_type
 
-        print 'fitting model of type', model_type, 'to', vectors.shape[0], 'with', \
-            self.n_topics, 'topics'
+        print('fitting model of type', model_type, 'to', vectors.shape[0], 'with', \
+            self.n_topics, 'topics')
 
         res = self.model.fit_transform(vectors)
         self.baseline_topics = sum(res) / len(res)
@@ -189,17 +190,17 @@ class TopicModeler(object):
         """
         Train a topic modeler on the entire text corpus.
         """
-        print 'building vectors...'
+        print('building vectors...')
         vectors = self.vectorize(sample_size=sample_size)
 
-        print 'fitting model...'
+        print('fitting model...')
         self.fit_model(vectors)
 
     def predict_topics_forums(self, forums, verbose=False):
         docs = []
         for forum in forums[:]:
             if forum not in self.docs:
-                print 'forum', forum, 'has no documents!'
+                print('forum', forum, 'has no documents!')
                 forums.remove(forum)
                 continue
             docs.append(self.load_forum_thread(forum))
@@ -212,9 +213,9 @@ class TopicModeler(object):
 
         if verbose:
             for i, r in enumerate(res):
-                print 'Topics for forum "%s":' % forums[i]
+                print('Topics for forum "%s":' % forums[i])
                 for j, idx in enumerate(r.argsort()[:-6:-1]):
-                    print '%d. (%.3f)' % (j+1, r[idx]), self.topics[idx]
+                    print('%d. (%.3f)' % (j+1, r[idx]), self.topics[idx])
 
         if not verbose or len(res) > 1:
             total = np.zeros(res.shape[1])
@@ -230,10 +231,10 @@ class TopicModeler(object):
 
             # compare against the baseline
             total /= self.baseline_topics
-            print
-            print 'Top topics for group %s:' % forums
+            print()
+            print('Top topics for group %s:' % forums)
             for i, idx in enumerate(total.argsort()[:-6:-1]):
-                print '%d. (%.3f)' % (i+1, total[idx]), self.topics[idx]
+                print('%d. (%.3f)' % (i+1, total[idx]), self.topics[idx])
 
         return pd.DataFrame(index=forums, columns=self.topics, data=res)
 
@@ -241,7 +242,7 @@ class TopicModeler(object):
         docs = []
         for thread in threads[:]:
             if thread not in self.threads:
-                print 'thread', thread, 'documents not found!'
+                print('thread', thread, 'documents not found!')
                 threads.remove(thread)
                 continue
             docs.append(self.load_thread(thread))
@@ -253,50 +254,50 @@ class TopicModeler(object):
         res = self.model.transform(vec)
 
         for i, r in enumerate(res):
-            print 'Top topics for thread on "%s":' % \
-                self.data.all_threads[threads[i]]
+            print('Top topics for thread on "%s":' % \
+                self.data.all_threads[threads[i]])
             for j, idx in enumerate(r.argsort()[:-6:-1]):
-                print '%d. (%.3f)' % (j+1, r[idx]), self.topics[idx]
+                print('%d. (%.3f)' % (j+1, r[idx]), self.topics[idx])
 
         return pd.DataFrame(index=threads, columns=self.topics, data=res)
 
 
 def model_forums_as_topics(year=2017, cutoff=5, forum=None, n_topics=20):
-    print 'querying'
+    print('querying')
     user_docs = get_user_forums(year)
 
-    print 'sampling'
+    print('sampling')
     # only include users who have posted in enough different forums, and exclude
     # anonymous users (uid == -1)
-    sample = {u: d for u, d in user_docs.iteritems()
+    sample = {u: d for u, d in user_docs.items()
               if len(set(d)) >= cutoff and u != -1}
     # number of posts each user made
     user_count = {}
 
     if forum is not None:
-        for u, d in sample.items():
+        for u, d in list(sample.items()):
             if forum in d:
                 sample[u] = [i for i in d if i != forum]
                 user_count[u] = len([i for i in d if i == forum])
             else:
                 del sample[u]
         if len(sample) == 0:
-            print "No posters in forum '%s' found!"
+            print("No posters in forum '%s' found!")
             return
     else:
-        user_count = {u: len(d) for u, d in sample.iteritems()}
+        user_count = {u: len(d) for u, d in sample.items()}
 
-    users, docs = zip(*sample.items())
-    print len(users), 'users with', sum(user_count.values()), 'posts'
+    users, docs = list(zip(*list(sample.items())))
+    print(len(users), 'users with', sum(user_count.values()), 'posts')
     strings = [' '.join(doc) for doc in docs]
 
-    print 'vectorizing'
+    print('vectorizing')
     vectorizer = TfidfVectorizer(min_df=5, max_features=1000,
                                  preprocessor=lambda s: s,
                                  tokenizer=lambda s: s.split())
     vectors = vectorizer.fit_transform(strings)
 
-    print 'topic modeling'
+    print('topic modeling')
     lda = LatentDirichletAllocation(n_topics=n_topics, max_iter=10,
                                     learning_method='online',
                                     learning_offset=50., random_state=0)
@@ -306,20 +307,20 @@ def model_forums_as_topics(year=2017, cutoff=5, forum=None, n_topics=20):
 
     top_topics = {t: 0 for t in range(n_topics)}
     sum_topics = {t: 0 for t in range(n_topics)}
-    for u, vec in user_topics.iteritems():
+    for u, vec in user_topics.items():
         top_topic = np.argsort(vec)[-1]
         top_topics[top_topic] += user_count[u]
         for t, val in enumerate(vec):
             sum_topics[t] += val * user_count[u]
 
-    print
-    print 'Most common top topics:'
-    for t, count in sorted(top_topics.items(), key=lambda i: -i[1]):
-        print '%d: %s' % (count, topic_names[t])
+    print()
+    print('Most common top topics:')
+    for t, count in sorted(list(top_topics.items()), key=lambda i: -i[1]):
+        print('%d: %s' % (count, topic_names[t]))
 
-    print
-    print 'Top topics overall:'
-    for t, count in sorted(sum_topics.items(), key=lambda i: -i[1]):
-        print '%.2f: %s' % (count, topic_names[t])
+    print()
+    print('Top topics overall:')
+    for t, count in sorted(list(sum_topics.items()), key=lambda i: -i[1]):
+        print('%.2f: %s' % (count, topic_names[t]))
 
     return strings, vectorizer, vectors, lda, users, user_topics

@@ -83,7 +83,7 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
             raise ValueError(weight_func)
 
         # sort all possible sources by our weight metric
-        all_sources = sorted(edges.keys(), key=lambda f: -weights[f])
+        all_sources = sorted(list(edges.keys()), key=lambda f: -weights[f])
 
         # cull sources that arent the right type
         for f in all_sources[:]:
@@ -115,12 +115,12 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
             # generate a mapping of target forums to their occurrences in the graph
             # weighted by number of users for source forum
             weights = defaultdict(float)
-            for f, counts in edges.iteritems():
+            for f, counts in edges.items():
                 # only count forums that are in our index
                 if f not in sources:
                     continue
 
-                for t, count in counts.iteritems():
+                for t, count in counts.items():
                     # do category filtering if necessary
                     category = data.forum_details.get(t, {}).get('category', -1)
                     if tar_cats is None or category in tar_cats:
@@ -128,7 +128,7 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
                         weights[t] += 1  #float(count) / len(forum_out_links(f))
 
             # take the top N most-mentioned targets
-            targets = sorted(weights.keys(), key=lambda t: -weights[t])[:N]
+            targets = sorted(list(weights.keys()), key=lambda t: -weights[t])[:N]
 
     # M by N matrix
     df = pd.DataFrame(index=sources, columns=targets)
@@ -166,7 +166,7 @@ def build_link_matrix(data, dedup=True, M=None, N=500, square=False,
         elif col_norm == 'l2':
             df[c] /= np.sqrt(sum(df[c]**2))
 
-    print df.shape
+    print(df.shape)
 
     return df
 
@@ -179,7 +179,7 @@ def pagerank(df, iters=10):
     w, v = linalg.eig(A)
     vec = abs(np.real(v[:n, 0]) / linalg.norm(v[:n, 0], 1))
     ranks = {df.columns[i]: vec[i] for i in range(len(vec))}
-    return sorted(ranks.items(), key=lambda i: i[1])
+    return sorted(list(ranks.items()), key=lambda i: i[1])
 
 
 def get_correlations(df):
@@ -197,15 +197,15 @@ def top_correlations(cor, forum, n=10):
     cor[forum][forum] = 0
     top = cor[forum].sort_values(ascending=False)[:n]
     for i, f in enumerate(top.index):
-        print '%d. %s: %.3f' % (i+1, f, cor[forum][f])
+        print('%d. %s: %.3f' % (i+1, f, cor[forum][f]))
 
 
 def print_correlations(df):
     for i, arr in enumerate(np.corrcoef(df.values.astype(float))):
         a = arr[:]
         a[i] = 0
-        print df.columns[i], colored(df.columns[a.argmax()], 'green'), max(a), \
-            colored(df.columns[a.argmin()], 'red'), min(a)
+        print(df.columns[i], colored(df.columns[a.argmax()], 'green'), max(a), \
+            colored(df.columns[a.argmin()], 'red'), min(a))
 
 
 def kmeans_cluster(df, n_clusters=10):
@@ -230,7 +230,7 @@ def do_mcl(df, e, r, subset=None):
     for c in df.columns:
         df[c] = df[c].map(lambda v: v**2 if v > 0 else 0)
         if not sum(df[c]):
-            print c, 'has no connections!'
+            print(c, 'has no connections!')
             continue
         df[c] /= sum(df[c])     # column normalize
 
@@ -266,7 +266,7 @@ def do_mcl(df, e, r, subset=None):
         if sum(mat[:,i]) > 0:
             # find the forums that cluster around this one, sort alphabetically
             cluster = [j for j in range(mat.shape[0]) if mat[j,i] > 0]
-            cluster = sorted(map(lambda k: df.columns[k], cluster))
+            cluster = sorted([df.columns[k] for k in cluster])
             clusters[df.columns[i]] = cluster
 
     return clusters
@@ -287,7 +287,7 @@ def plot_forums(matrix, groups, method='pca', n_groups=None, do_legend=False):
 
     legend = []
     n_groups = n_groups or len(groups)
-    sort_groups = sorted(groups.items(), key=lambda i: -len(i[1]))[:n_groups]
+    sort_groups = sorted(list(groups.items()), key=lambda i: -len(i[1]))[:n_groups]
 
     min_x, max_x = min(df[0]), max(df[0])
     min_y, max_y = min(df[1]), max(df[1])
@@ -321,6 +321,6 @@ def plot_forums(matrix, groups, method='pca', n_groups=None, do_legend=False):
         legend.append((c, f))
 
     if do_legend:
-        plt.legend(*zip(*legend))
+        plt.legend(*list(zip(*legend)))
     plt.show()
 
