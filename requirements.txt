@@ -23,7 +23,7 @@ matplotlib==1.5.3
 mock==2.0.0
 MySQL-python==1.2.5
 networkx==1.11
-nltk==3.2.1
+nltk==3.6.3
 numpy==1.13.0
 olefile==0.44
 pandas==0.18.1
